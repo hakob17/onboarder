@@ -1,0 +1,12 @@
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.pyc
+backend/data
+frontend/dist
+vscode-extension/out
+vscode-extension/media
+vscode-extension/node_modules
+*.vsix
+.git
+.DS_Store

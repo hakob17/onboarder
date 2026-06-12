@@ -1,0 +1,4 @@
+{
+  "name": "billing-service",
+  "dependencies": { "express": "^4.19.0", "pg": "^8.11.0" }
+}

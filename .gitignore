@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+backend/data/
+backend/tests/fixtures/*.zip
+node_modules/
+dist/
+vscode-extension/out/
+*.vsix
+.env
+.DS_Store

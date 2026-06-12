@@ -1,0 +1,84 @@
+{
+  "name": "onboarder",
+  "displayName": "Onboarder",
+  "description": "Interactive architecture map of your workspace: endpoints → services → repositories → tables, cross-project links, AI summaries and chat. Analyzes the open folder in place — no upload.",
+  "version": "0.4.0",
+  "publisher": "onboarder-dev",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "onboarder.openMap",
+        "title": "Onboarder: Map this workspace"
+      },
+      {
+        "command": "onboarder.ask",
+        "title": "Onboarder: Ask about this codebase"
+      },
+      {
+        "command": "onboarder.compare",
+        "title": "Onboarder: Compare with baseline"
+      },
+      {
+        "command": "onboarder.reanalyze",
+        "title": "Onboarder: Re-analyze workspace"
+      },
+      {
+        "command": "onboarder.setApiKey",
+        "title": "Onboarder: Set Anthropic API key"
+      }
+    ],
+    "configuration": {
+      "title": "Onboarder",
+      "properties": {
+        "onboarder.backendUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Attach to an already-running Onboarder backend (e.g. http://127.0.0.1:8000). Leave empty to let the extension spawn its own."
+        },
+        "onboarder.backendPath": {
+          "type": "string",
+          "default": "",
+          "description": "Folder containing the Onboarder backend (the directory with pyproject.toml). Defaults to the backend/ folder next to this extension."
+        },
+        "onboarder.frontendDist": {
+          "type": "string",
+          "default": "",
+          "description": "Folder containing the built frontend (frontend/dist). Defaults to the frontend/dist next to this extension."
+        },
+        "onboarder.startCommand": {
+          "type": "string",
+          "default": "uv run uvicorn app.main:app --port ${port}",
+          "description": "Command used to start the backend (run with backendPath as cwd). ${port} is replaced with a free port."
+        },
+        "onboarder.autoReanalyze": {
+          "type": "boolean",
+          "default": true,
+          "description": "Re-analyze the affected project automatically when you save a file (the open map refreshes in place)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -w -p .",
+    "bundle-frontend": "node scripts/bundle-frontend.js",
+    "package": "npm run compile && npm run bundle-frontend && npx --yes @vscode/vsce package --allow-missing-repository"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.6.0"
+  }
+}

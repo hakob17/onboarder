@@ -1,0 +1,4 @@
+{
+  "name": "widget-shop",
+  "dependencies": { "express": "^4.19.0", "pg": "^8.11.0", "axios": "^1.7.0" }
+}
