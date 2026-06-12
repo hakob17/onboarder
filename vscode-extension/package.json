@@ -2,7 +2,7 @@
   "name": "onboarder",
   "displayName": "Onboarder",
   "description": "Interactive architecture map of your workspace: endpoints → services → repositories → tables, cross-project links, AI summaries and chat. Analyzes the open folder in place — no upload.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "onboarder-dev",
   "private": true,
   "engines": {

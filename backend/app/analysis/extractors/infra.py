@@ -94,6 +94,27 @@ def _resolve_vars(value: str, tf_vars: dict) -> str:
     return re.sub(r"\$\{var\.(\w+)\}", lambda m: str(tf_vars.get(m.group(1), m.group(0))), value)
 
 
+def _handler_fn(handler: str) -> str:
+    base = handler.split("::")[-1] if "::" in handler else handler.split(".")[-1]
+    return base.strip()
+
+
+_DEF_TMPL = (
+    r"(?:exports\.|module\.exports\.|"
+    r"export\s+(?:default\s+)?(?:async\s+)?(?:const|function|let|var)\s+|"
+    r"(?:async\s+)?function\s+|const\s+|let\s+|var\s+|def\s+|"
+    r"public[\w\s<>,\[\]]*?\s+){name}\b"
+)
+
+
+def _handler_line(text: str, fn: str) -> int:
+    safe = re.escape(fn)
+    m = re.search(_DEF_TMPL.format(name=safe), text)
+    if not m:
+        m = re.search(rf"\b{safe}\b", text)
+    return text[:m.start()].count("\n") + 1 if m else 1
+
+
 def _find_handler_file(src_root: Path, handler: str | None, code_uri: str | None) -> str | None:
     if not handler:
         return None
@@ -155,11 +176,20 @@ class InfraExtractor:
         def bind_handler(compute_id: str, handler: str | None, code_uri: str | None,
                          file: str, line: int):
             rel = _find_handler_file(src_root, handler, code_uri)
-            if rel:
-                module_id = add_module(rel)
-                add_edge(compute_id, module_id, "RUNS", 0.85, file, line,
-                         f"handler {handler}")
-                stats["bound_handlers"] += 1
+            if not rel:
+                return
+            hline = 1
+            try:
+                text = (src_root / rel).read_text("utf-8", errors="replace")
+                hline = _handler_line(text, _handler_fn(handler or ""))
+            except OSError:
+                pass
+            module_id = add_module(rel)
+            # point the compute node straight at the handler method for click-through
+            nodes[compute_id]["metadata"]["handler_file"] = rel
+            nodes[compute_id]["metadata"]["handler_line"] = hline
+            add_edge(compute_id, module_id, "RUNS", 0.85, rel, hline, f"handler {handler}")
+            stats["bound_handlers"] += 1
 
         # ---------- Terraform ----------
         tf_resources: dict[str, dict] = {}  # "aws_sqs_queue.foo" -> {node_id, kind}

@@ -1,22 +1,27 @@
 import { Icon, Logo } from "../icons";
 import type { Project, Workspace } from "../api";
 
-export type RailKey = "map" | "trace" | "tables" | "chat";
+export type RailKey = "map" | "trace" | "tables" | "infra" | "chat";
 
-export function Rail({ active, onNav, onHome, onSettings }: {
+export function Rail({ active, onNav, onHome, onSettings, hasInfra }: {
   active: RailKey;
   onNav: (k: RailKey) => void;
   onHome: () => void;
   onSettings: () => void;
+  hasInfra: boolean;
 }) {
-  const items: [RailKey, string][] = [["map", "Map"], ["trace", "Trace"], ["tables", "Tables"], ["chat", "Chat"]];
+  const items: [RailKey, string][] = [
+    ["map", "Map"], ["trace", "Trace"], ["tables", "Tables"],
+    ...(hasInfra ? [["infra", "Infrastructure"] as [RailKey, string]] : []),
+    ["chat", "Chat"],
+  ];
   return (
     <div className="rail">
       <div className="rail-logo" title="Onboarder — projects" onClick={onHome} style={{ cursor: "pointer" }}>
         <Logo />
       </div>
       {items.map(([k, label]) => {
-        const Ico = Icon[k];
+        const Ico = k === "infra" ? Icon.cloud : Icon[k];
         return (
           <div key={k} className={"rail-btn" + (active === k ? " active" : "")} title={label} onClick={() => onNav(k)}>
             <Ico />

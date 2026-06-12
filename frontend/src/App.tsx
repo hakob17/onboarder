@@ -6,6 +6,7 @@ import {
 } from "./api";
 import { ChatPanel } from "./components/Chat";
 import { DiffPanel } from "./components/DiffPanel";
+import { InfraView } from "./components/InfraView";
 import { Icon } from "./icons";
 import { MapGraph, type Highlight } from "./components/MapGraph";
 import { NodePanel, TablePanel } from "./components/panels";
@@ -17,7 +18,7 @@ import { AnalysisState, UploadChrome, UploadEmpty } from "./components/Upload";
 import { adaptGraph, neighborhood, pathsHighlight, type DNode } from "./model";
 
 type Phase = "home" | "analyzing" | "workspace";
-type View = "map" | "tables" | "chat";
+type View = "map" | "tables" | "infra" | "chat";
 
 export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem("ob_theme") ?? "light");
@@ -380,6 +381,7 @@ export default function App() {
   const onNav = (k: RailKey) => {
     if (k === "chat") setView("chat");
     else if (k === "tables") setView("tables");
+    else if (k === "infra") { setView("infra"); setDiffOpen(false); }
     else {
       setView("map");
       if (k === "trace") { setSelectedId(null); setDetail(null); setHighlight(null); }
@@ -418,13 +420,15 @@ export default function App() {
 
   if (!g) return null;
 
-  const activeRail: RailKey = view === "chat" ? "chat" : view === "tables" ? "tables" : "map";
+  const activeRail: RailKey = view === "chat" ? "chat" : view === "tables" ? "tables"
+    : view === "infra" ? "infra" : "map";
+  const hasInfra = g.nodes.some((n) => ["infra_compute", "gateway", "queue", "topic", "datastore"].includes(n.raw.kind));
   const showNodePanel = detail && detail.kind !== "table" && view === "map" && !diffOpen;
   const showTable = view === "tables" && detail?.kind === "table";
 
   return (
     <div className="screen" data-theme={theme === "dark" ? "dark" : undefined}>
-      <Rail active={activeRail} onNav={onNav} onHome={goHome} onSettings={() => setSettingsOpen(true)} />
+      <Rail active={activeRail} onNav={onNav} onHome={goHome} onSettings={() => setSettingsOpen(true)} hasInfra={hasInfra} />
       <TopBar
         ws={ws} projects={projects} theme={theme} onTheme={toggleTheme}
         onReanalyze={() => void reanalyze()} search={search} onSearch={setSearch}
@@ -443,6 +447,8 @@ export default function App() {
             onAskConsumed={() => setChatAsk(null)}
           />
         </MapGraph>
+      ) : view === "infra" ? (
+        <InfraView wsId={ws.id} g={g} onClose={() => setView("map")} />
       ) : showTable ? (
         <StarGraph g={g} detail={detail!} onSelect={onSelect}>
           <div className="star-switch">
