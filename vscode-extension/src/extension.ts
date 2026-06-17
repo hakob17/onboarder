@@ -2,13 +2,21 @@ import * as cp from "child_process";
 import * as crypto from "crypto";
 import * as fs from "fs";
 import * as net from "net";
+import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 
 interface Backend {
   baseUrl: string;
   proc?: cp.ChildProcess;
+  mode: "local" | "remote";
 }
+
+const ZIP_SKIP_DIRS = [
+  "node_modules", ".git", "dist", "build", ".venv", "venv", "target", "out",
+  ".next", ".nuxt", "coverage", "__pycache__", ".gradle", "Pods", ".dart_tool",
+  ".idea", ".vscode",
+];
 
 interface ProjectInfo {
   id: string;
@@ -96,14 +104,17 @@ async function ensureBackend(context: vscode.ExtensionContext): Promise<Backend>
     if (!(await healthy(attachUrl))) {
       throw new Error(`Onboarder backend at ${attachUrl} is not responding (/health failed)`);
     }
-    backend = { baseUrl: attachUrl };
+    backend = { baseUrl: attachUrl, mode: "remote" };
     return backend;
   }
 
-  const backendPath = cfg().get<string>("backendPath") || repoDefault(context, "backend");
+  const repoBackend = repoDefault(context, "backend");
+  const backendPath = cfg().get<string>("backendPath") || repoBackend;
   if (!fs.existsSync(path.join(backendPath, "pyproject.toml"))) {
     throw new Error(
-      `Onboarder backend not found at ${backendPath} — set "onboarder.backendPath" to the backend folder`);
+      "Onboarder has no backend to use. Either set \"onboarder.backendUrl\" to a hosted backend " +
+      "(e.g. your Railway URL) to analyze uploaded projects, or set \"onboarder.backendPath\" to a " +
+      "local clone of the Onboarder backend folder to analyze this folder in place.");
   }
   const port = await freePort();
   const command = (cfg().get<string>("startCommand") || "uv run uvicorn app.main:app --port ${port}")
@@ -125,7 +136,7 @@ async function ensureBackend(context: vscode.ExtensionContext): Promise<Backend>
   const deadline = Date.now() + 30000;
   while (Date.now() < deadline) {
     if (await healthy(baseUrl)) {
-      backend = { baseUrl, proc };
+      backend = { baseUrl, proc, mode: "local" };
       return backend;
     }
     await new Promise((r) => setTimeout(r, 400));
@@ -137,13 +148,75 @@ async function ensureBackend(context: vscode.ExtensionContext): Promise<Backend>
 
 async function refreshProjects(base: string, wsId: string): Promise<ProjectInfo[]> {
   const projects = await api<ProjectInfo[]>(base, `/workspaces/${wsId}/projects`);
-  projectRoots.clear();
-  for (const p of projects) {
-    if (path.isAbsolute(p.root_path)) {
-      projectRoots.set(p.id, p.root_path);
+  // In local mode the backend's root_path IS the local folder. In remote mode
+  // those paths live on the server — projectRoots is populated at upload time
+  // from the folders we zipped, so don't clobber it here.
+  if (backend?.mode !== "remote") {
+    projectRoots.clear();
+    for (const p of projects) {
+      if (path.isAbsolute(p.root_path)) {
+        projectRoots.set(p.id, p.root_path);
+      }
     }
   }
   return projects;
+}
+
+// ---------- remote upload mode ----------
+
+function zipFolder(folder: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const tmp = path.join(os.tmpdir(), `onboarder-${crypto.randomBytes(6).toString("hex")}.zip`);
+    const excludes: string[] = [];
+    for (const d of ZIP_SKIP_DIRS) {
+      excludes.push(`${d}/*`, `*/${d}/*`);
+    }
+    excludes.push(".env", ".env.*", "*/.env", "*/.env.*");
+    const proc = cp.spawn("zip", ["-rqX", tmp, ".", "-x", ...excludes], { cwd: folder });
+    let err = "";
+    proc.stderr?.on("data", (d) => { err += d.toString(); });
+    proc.on("error", (e) =>
+      reject(new Error(`could not run 'zip' (${e.message}). Install zip, or use a local backend.`)));
+    proc.on("exit", (code) => {
+      if (code === 0 || code === 12) resolve(tmp);  // 12 = nothing to do (still wrote a zip)
+      else reject(new Error(`zip failed (code ${code}) ${err.slice(0, 200)}`));
+    });
+  });
+}
+
+async function uploadZip(base: string, wsId: string, name: string, zipPath: string): Promise<ProjectInfo[]> {
+  const buf = fs.readFileSync(zipPath);
+  const fd = new FormData();
+  fd.append("file", new Blob([buf]), `${name}.zip`);
+  const r = await fetch(`${base}/workspaces/${wsId}/projects`, { method: "POST", body: fd });
+  if (!r.ok) {
+    let detail = r.statusText;
+    try { detail = ((await r.json()) as { detail?: string }).detail ?? detail; } catch { /* */ }
+    throw new Error(detail);
+  }
+  return ((await r.json()) as { projects: ProjectInfo[] }).projects;
+}
+
+async function uploadAllFolders(base: string, wsId: string, folders: readonly vscode.WorkspaceFolder[],
+                                report?: (m: string) => void): Promise<void> {
+  // Replace any prior projects so re-mapping doesn't accumulate duplicates.
+  const existing = await api<ProjectInfo[]>(base, `/workspaces/${wsId}/projects`);
+  await Promise.all(existing.map((p) =>
+    api(base, `/workspaces/${wsId}/projects/${p.id}`, { method: "DELETE" }).catch(() => undefined)));
+  projectRoots.clear();
+  for (const folder of folders) {
+    report?.(`zipping ${path.basename(folder.uri.fsPath)}…`);
+    const zip = await zipFolder(folder.uri.fsPath);
+    try {
+      report?.(`uploading ${path.basename(folder.uri.fsPath)}…`);
+      const created = await uploadZip(base, wsId, path.basename(folder.uri.fsPath), zip);
+      for (const p of created) {
+        projectRoots.set(p.id, folder.uri.fsPath);  // open files locally even though analysis ran remotely
+      }
+    } finally {
+      fs.rmSync(zip, { force: true });
+    }
+  }
 }
 
 function projectForPath(fsPath: string): string | null {
@@ -196,6 +269,26 @@ async function ensureWorkspace(context: vscode.ExtensionContext, base: string, q
     wsId = created.id;
     await context.workspaceState.update("onboarder.wsId", wsId);
   }
+  if (backend?.mode === "remote") {
+    // Remote backend can't read the local disk — upload the folder(s) instead.
+    // Reuse an existing mapping rather than re-uploading on every panel open.
+    const existing = await api<ProjectInfo[]>(base, `/workspaces/${wsId}/projects`);
+    if (existing.length > 0 && projectRoots.size > 0) {
+      currentWsId = wsId;
+      return wsId;
+    }
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: "Onboarder: uploading workspace…" },
+      async (progress) => {
+        await uploadAllFolders(base, wsId!, folders, (m) => progress.report({ message: m }));
+        progress.report({ message: "analyzing…" });
+        await waitForAnalysis(base, wsId!, (m) => progress.report({ message: m }));
+      },
+    );
+    currentWsId = wsId;
+    return wsId;
+  }
+
   for (const folder of folders) {
     await api(base, `/workspaces/${wsId}/projects/local`, {
       method: "POST",
@@ -454,11 +547,23 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!wsId) {
         throw new Error("No Onboarder workspace yet — run “Onboarder: Map this workspace” first");
       }
-      const projects = await refreshProjects(be.baseUrl, wsId);
-      await Promise.all(projects.map((p) =>
-        api(be.baseUrl, `/workspaces/${wsId}/projects/${p.id}/reanalyze`, { method: "POST" })));
-      vscode.window.showInformationMessage(`Onboarder: re-analyzing ${projects.length} project(s)`);
-      await waitForAnalysis(be.baseUrl, wsId);
+      if (be.mode === "remote") {
+        const folders = vscode.workspace.workspaceFolders ?? [];
+        await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: "Onboarder: re-uploading workspace…" },
+          async (progress) => {
+            await uploadAllFolders(be.baseUrl, wsId, folders, (m) => progress.report({ message: m }));
+            progress.report({ message: "analyzing…" });
+            await waitForAnalysis(be.baseUrl, wsId);
+          },
+        );
+      } else {
+        const projects = await refreshProjects(be.baseUrl, wsId);
+        await Promise.all(projects.map((p) =>
+          api(be.baseUrl, `/workspaces/${wsId}/projects/${p.id}/reanalyze`, { method: "POST" })));
+        vscode.window.showInformationMessage(`Onboarder: re-analyzing ${projects.length} project(s)`);
+        await waitForAnalysis(be.baseUrl, wsId);
+      }
       graphCache.invalidate();
       lensProvider.fire();
       panel?.webview.postMessage({ command: "refresh" });
@@ -491,7 +596,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument((doc) => {
-      if (!cfg().get<boolean>("autoReanalyze", true) || !backend || !currentWsId) {
+      // Save-triggered re-analysis is local-mode only — re-zipping/uploading the
+      // whole workspace on every save would be far too heavy. Remote users refresh
+      // with the "Re-analyze workspace" command.
+      if (backend?.mode !== "local"
+          || !cfg().get<boolean>("autoReanalyze", true) || !backend || !currentWsId) {
         return;
       }
       const projectId = projectForPath(doc.uri.fsPath);

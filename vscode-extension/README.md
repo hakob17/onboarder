@@ -45,6 +45,26 @@ VSIX…"). The Python backend is still required on the machine (`uv` + the
 `backend/` folder, or point `onboarder.backendUrl` at a running instance);
 bundling it as a standalone binary (PyInstaller) is future work.
 
+## Local vs remote backend
+
+The extension needs a backend. It picks one in this order: `onboarder.backendUrl`
+setting → baked-in `DEFAULT_BACKEND_URL` → a local sidecar it spawns from
+`onboarder.backendPath`.
+
+- **Local backend** (empty `backendUrl`): analyzes the open folder **in place** — no
+  upload. Full experience: live save-reanalyze, evidence links and the Infra tab's
+  "open handler" jump to the real file. Requires the backend on the machine
+  (a clone of this repo + `uv`, or `backendPath` set).
+- **Remote backend** (e.g. a Railway URL in `backendUrl`): the extension **zips the
+  open folder and uploads it** for analysis (it can't ask a remote server to read
+  your disk). Map / Trace / Tables / Infra / Chat all work; files still open locally.
+  Re-analysis is on the **Re-analyze** command (not auto-on-save). `.env` files are
+  excluded from the upload. Best when you don't want to run a backend locally.
+
+If you see *"not a directory …"* or *"no backend to use"*, it means no backend was
+reachable — set `onboarder.backendUrl` to your hosted URL, or `onboarder.backendPath`
+to a local backend clone.
+
 ## Settings
 
 | Setting | Default | Purpose |
