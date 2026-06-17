@@ -48,7 +48,13 @@ def _node_source(node: dict) -> tuple[str, int, int]:
     expanded to cover the inline handler; everything else stays within the
     node's declared lines so the model never sees more than the clicked unit.
     """
-    if not node.get("file"):
+    md = node.get("metadata") or {}
+    # Infra compute nodes (Lambda/ECS) are *declared* in a .tf/template, but their
+    # business logic lives in the handler — summarize that instead of the IaC block.
+    src_file = md.get("handler_file") or node.get("file")
+    src_start = md.get("handler_line") if md.get("handler_file") else node.get("line_start")
+    src_end = node.get("line_end") if not md.get("handler_file") else None
+    if not src_file:
         return "", 0, 0
     conn = get_conn()
     try:
@@ -58,12 +64,12 @@ def _node_source(node: dict) -> tuple[str, int, int]:
         conn.close()
     if row is None:
         return "", 0, 0
-    path = resolve_root(row["root_path"]) / node["file"]
+    path = resolve_root(row["root_path"]) / src_file
     if not path.is_file():
         return "", 0, 0
     lines = path.read_text("utf-8", errors="replace").splitlines()
-    start_line = max(1, node.get("line_start") or 1)
-    end_line = node.get("line_end") or start_line
+    start_line = max(1, src_start or 1)
+    end_line = src_end or start_line
     if end_line <= start_line:
         end_line = start_line + 60
     end_line = min(len(lines), end_line, start_line + ENRICH_MAX_SOURCE_LINES - 1)
@@ -87,6 +93,8 @@ def enrich_node(workspace_id: str, node_id: str) -> dict:
     source, src_start, src_end = _node_source(node)
     if not source:
         raise ValueError("node has no readable source to summarize")
+    md = node.get("metadata") or {}
+    display_file = md.get("handler_file") or node.get("file") or "unknown"
     content_hash = hashlib.sha1(f"{MODEL}\n{node_id}\n{source}".encode()).hexdigest()
 
     conn = get_conn()
@@ -111,7 +119,7 @@ def enrich_node(workspace_id: str, node_id: str) -> dict:
                 kind=node["kind"],
                 scope_hint=SCOPE_HINTS.get(node["kind"], ""),
                 edges=_edges_summary(node),
-                file=node.get("file") or "unknown",
+                file=display_file,
                 start=src_start,
                 end=src_end,
                 source=source,
@@ -121,7 +129,7 @@ def enrich_node(workspace_id: str, node_id: str) -> dict:
     )
     card = response.parsed_output.model_dump()
     card["generated_from"] = {
-        "file": node.get("file"),
+        "file": display_file,
         "start": src_start,
         "end": src_end,
         "lines": src_end - src_start + 1,

@@ -479,7 +479,7 @@ export default function App() {
           />
         </MapGraph>
       ) : view === "infra" ? (
-        <InfraView wsId={ws.id} g={g} onClose={() => setView("map")} />
+        <InfraView wsId={ws.id} g={g} llmEnabled={llmEnabled} onClose={() => setView("map")} />
       ) : showTable ? (
         <StarGraph g={g} detail={detail!} onSelect={onSelect}>
           <div className="star-switch">

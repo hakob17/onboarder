@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Icon } from "../icons";
 import { anchorsFor, curvePath, type DGraph, type DNode } from "../model";
 import { inVsCode, openInEditor } from "../vscode";
-import { CodePeek, EvidenceLink } from "./panels";
+import { AICard, CodePeek, EvidenceLink } from "./panels";
 import { NodeCard } from "./NodeCard";
 
 const INFRA_KINDS = new Set(["infra_compute", "topic", "datastore", "gateway", "queue"]);
@@ -18,9 +18,10 @@ interface Placed extends DNode {
   hy: number;
 }
 
-export function InfraView({ wsId, g }: {
+export function InfraView({ wsId, g, llmEnabled }: {
   wsId: string;
   g: DGraph;
+  llmEnabled: boolean;
   onClose: () => void;
 }) {
   const [selId, setSelId] = useState<string | null>(null);
@@ -104,12 +105,12 @@ export function InfraView({ wsId, g }: {
           ))}
         </div>
       </div>
-      {sel && <InfraPanel wsId={wsId} node={sel} onClose={() => setSelId(null)} />}
+      {sel && <InfraPanel wsId={wsId} node={sel} llmEnabled={llmEnabled} onClose={() => setSelId(null)} />}
     </div>
   );
 }
 
-function InfraPanel({ wsId, node, onClose }: { wsId: string; node: DNode; onClose: () => void }) {
+function InfraPanel({ wsId, node, llmEnabled, onClose }: { wsId: string; node: DNode; llmEnabled: boolean; onClose: () => void }) {
   const md = node.raw.metadata as Record<string, any>;
   const isCompute = node.raw.kind === "infra_compute";
   const hue = node.raw.kind === "datastore" ? "--l-table"
@@ -132,6 +133,10 @@ function InfraPanel({ wsId, node, onClose }: { wsId: string; node: DNode; onClos
         </div>
       </div>
       <div className="panel-body">
+        {isCompute && md.handler_file && (
+          <AICard wsId={wsId} nodeId={node.raw.id} card={null} llmEnabled={llmEnabled} />
+        )}
+
         <div className="panel-section">
           <div className="sec-label">Declared in</div>
           {node.raw.file && (

@@ -448,13 +448,21 @@ function buildHtml(webview: vscode.Webview, distDir: string, apiBase: string, ws
     return `${attr}="${uri}"`;
   });
   const nonce = crypto.randomBytes(16).toString("base64");
+  // The webview talks to the backend over fetch + EventSource (SSE); both are
+  // governed by connect-src. Localhost covers a local sidecar; a remote backend
+  // (e.g. the hosted Railway deploy) needs its own origin allow-listed or every
+  // request is blocked and the map can never load.
+  let backendOrigin = "";
+  try {
+    if (apiBase) backendOrigin = new URL(apiBase).origin;
+  } catch { /* relative/empty apiBase is same-origin — nothing to add */ }
   const csp = [
     "default-src 'none'",
     `img-src ${webview.cspSource} data: blob:`,
     `style-src ${webview.cspSource} 'unsafe-inline' https://fonts.googleapis.com`,
     "font-src https://fonts.gstatic.com",
     `script-src ${webview.cspSource} 'nonce-${nonce}'`,
-    "connect-src http://127.0.0.1:* http://localhost:*",
+    `connect-src http://127.0.0.1:* http://localhost:* ${backendOrigin}`.trim(),
   ].join("; ");
   const boot = `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
     `<script nonce="${nonce}">window.__ONBOARDER__=${JSON.stringify({ apiBase, workspaceId: wsId })};</script>`;
