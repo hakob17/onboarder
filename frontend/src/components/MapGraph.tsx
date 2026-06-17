@@ -44,13 +44,14 @@ function ZoomCtl({ zoom, onZoom }: { zoom: number; onZoom: (z: number) => void }
   );
 }
 
-export function MapGraph({ g, highlight, selectedId, onSelect, showMinimap = true, showZoom = true, children }: {
+export function MapGraph({ g, highlight, selectedId, onSelect, showMinimap = true, showZoom = true, showConf = false, children }: {
   g: DGraph;
   highlight: Highlight | null;
   selectedId?: string | null;
   onSelect?: (n: DNode | null) => void;
   showMinimap?: boolean;
   showZoom?: boolean;
+  showConf?: boolean;
   children?: ReactNode;
 }) {
   const [zoom, setZoom] = useState(1);
@@ -120,7 +121,7 @@ export function MapGraph({ g, highlight, selectedId, onSelect, showMinimap = tru
               );
             })}
             {g.nodes.map((n) => (
-              <NodeCard key={n.id} n={n} state={nodeState(n)} onClick={onSelect ?? undefined} />
+              <NodeCard key={n.id} n={n} state={nodeState(n)} onClick={onSelect ?? undefined} showConf={showConf} />
             ))}
           </div>
         </div>

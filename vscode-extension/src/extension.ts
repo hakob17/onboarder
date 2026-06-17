@@ -450,7 +450,7 @@ function buildHtml(webview: vscode.Webview, distDir: string, apiBase: string, ws
   const nonce = crypto.randomBytes(16).toString("base64");
   const csp = [
     "default-src 'none'",
-    `img-src ${webview.cspSource} data:`,
+    `img-src ${webview.cspSource} data: blob:`,
     `style-src ${webview.cspSource} 'unsafe-inline' https://fonts.googleapis.com`,
     "font-src https://fonts.gstatic.com",
     `script-src ${webview.cspSource} 'nonce-${nonce}'`,
@@ -480,7 +480,24 @@ async function openMap(context: vscode.ExtensionContext, quick = false): Promise
   panel.webview.html = buildHtml(panel.webview, distDir, be.baseUrl, wsId);
   panel.onDidDispose(() => { panel = null; });
 
-  panel.webview.onDidReceiveMessage(async (msg: { command?: string; projectId?: string; file?: string; line?: number }) => {
+  panel.webview.onDidReceiveMessage(async (msg: { command?: string; projectId?: string; file?: string; line?: number; name?: string; data?: string; kind?: string }) => {
+    if (msg.command === "saveFile" && msg.name && msg.data) {
+      try {
+        const target = await vscode.window.showSaveDialog({
+          defaultUri: vscode.Uri.file(path.join(
+            vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir(), msg.name)),
+        });
+        if (!target) return;
+        const bytes = msg.kind === "dataurl"
+          ? Buffer.from(msg.data.slice(msg.data.indexOf(",") + 1), "base64")
+          : Buffer.from(msg.data, "utf8");
+        await vscode.workspace.fs.writeFile(target, bytes);
+        vscode.window.showInformationMessage(`Onboarder: saved ${path.basename(target.fsPath)}`);
+      } catch (e) {
+        vscode.window.showErrorMessage(`Onboarder: save failed — ${e instanceof Error ? e.message : e}`);
+      }
+      return;
+    }
     if (msg.command !== "openFile" || !msg.projectId || !msg.file) {
       return;
     }

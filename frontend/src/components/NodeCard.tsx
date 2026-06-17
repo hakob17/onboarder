@@ -3,7 +3,7 @@ import { NODE_W, type DNode } from "../model";
 
 export type NodeState = "sel" | "hl" | "dim" | null;
 
-export function NodeCard({ n, state, onClick, showCols, sub, x, y }: {
+export function NodeCard({ n, state, onClick, showCols, sub, x, y, showConf }: {
   n: DNode;
   state: NodeState;
   onClick?: (n: DNode) => void;
@@ -11,7 +11,9 @@ export function NodeCard({ n, state, onClick, showCols, sub, x, y }: {
   sub?: string;
   x?: number;
   y?: number;
+  showConf?: boolean;
 }) {
+  const conf = n.raw.confidence ?? 1;
   const diffState = (n.raw.metadata as Record<string, unknown>)?.__diff as string | undefined;
   const diffCls = diffState === "added" ? "diff-add" : diffState === "removed" ? "diff-del"
     : diffState === "changed" ? "diff-chg" : null;
@@ -50,6 +52,9 @@ export function NodeCard({ n, state, onClick, showCols, sub, x, y }: {
           <span className="proj-chip" style={{ color: "var(--l-service)" }}>
             {n.foreign && !n.cross ? n.proj : n.infra ?? n.proj}
           </span>
+        )}
+        {showConf && conf < 1 && (
+          <span className="proj-chip" style={{ marginLeft: "auto", color: "var(--ink-4)" }}>{conf.toFixed(2)}</span>
         )}
       </div>
       {showCols && n.cols && n.cols.length > 0 && (

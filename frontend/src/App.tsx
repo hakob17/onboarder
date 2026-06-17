@@ -11,7 +11,8 @@ import { Icon } from "./icons";
 import { MapGraph, type Highlight } from "./components/MapGraph";
 import { NodePanel, TablePanel } from "./components/panels";
 import { SettingsModal } from "./components/SettingsModal";
-import { Rail, TopBar, type RailKey } from "./components/shell";
+import { Rail, TopBar, type Persona, type RailKey } from "./components/shell";
+import { exportJson, exportSvg } from "./export";
 import { StarGraph } from "./components/StarGraph";
 import { TourCard } from "./components/TourCard";
 import { AnalysisState, UploadChrome, UploadEmpty } from "./components/Upload";
@@ -45,6 +46,8 @@ export default function App() {
   const [diffBase, setDiffBase] = useState("latest");
   const [diffBusy, setDiffBusy] = useState(false);
   const [snapshots, setSnapshots] = useState<SnapshotMeta[]>([]);
+  const [persona, setPersona] = useState<Persona>(() => (localStorage.getItem("ob_persona") as Persona) || "dev");
+  useEffect(() => { localStorage.setItem("ob_persona", persona); }, [persona]);
 
   // in compare mode, render the union of current graph + ghosts of removed things
   const renderRaw = useMemo<Graph | null>(() => {
@@ -71,9 +74,26 @@ export default function App() {
     };
   }, [graphRaw, diff, diffOpen]);
 
+  // Manager persona shows a high-confidence "business" view: drop LLM-guessed /
+  // low-confidence nodes & edges. Power keeps everything (and shows confidence).
+  const personaRaw = useMemo<Graph | null>(() => {
+    if (!renderRaw) return null;
+    if (persona !== "pm") return renderRaw;
+    const core = new Set(["entry_point", "logic", "table"]);
+    const keep = (c: number, kind: string) => c >= 0.7 || core.has(kind);
+    const nodes = renderRaw.nodes.filter((n) => keep(n.confidence ?? 1, n.kind));
+    const ids = new Set(nodes.map((n) => n.id));
+    const okEdge = (e: GraphEdge) => ids.has(e.src) && ids.has(e.dst) && (e.confidence ?? 1) >= 0.7;
+    return {
+      nodes,
+      edges: renderRaw.edges.filter(okEdge),
+      cross_edges: renderRaw.cross_edges.filter(okEdge),
+    };
+  }, [renderRaw, persona]);
+
   const g = useMemo(
-    () => (renderRaw ? adaptGraph(renderRaw, projects) : null),
-    [renderRaw, projects],
+    () => (personaRaw ? adaptGraph(personaRaw, projects) : null),
+    [personaRaw, projects],
   );
   const projName = useMemo(
     () => new Map(projects.map((p) => [p.id, p.name.split("/").pop() ?? p.name])),
@@ -364,6 +384,16 @@ export default function App() {
     setDiff(null);
   };
 
+  async function onExport(format: "svg" | "json") {
+    const base = (ws?.name || "onboarder").replace(/[^\w.-]+/g, "-");
+    try {
+      if (format === "json" && graphRaw) exportJson(base, graphRaw);
+      else if (format === "svg") await exportSvg(base);
+    } catch (e) {
+      setTourError(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   // keep the comparison current as re-analysis refreshes the graph underneath
   useEffect(() => {
     if (diffOpen && ws) void loadDiff(diffBase);
@@ -434,9 +464,10 @@ export default function App() {
         onReanalyze={() => void reanalyze()} search={search} onSearch={setSearch}
         onTour={() => void openTour()} tourBusy={tourBusy}
         onCompare={() => void openDiff()} compareActive={diffOpen}
+        persona={persona} onPersona={setPersona} onExport={(f) => void onExport(f)}
       />
       {view === "chat" ? (
-        <MapGraph g={g} highlight={highlight} selectedId={selectedId} showMinimap={false} showZoom={false}>
+        <MapGraph g={g} highlight={highlight} selectedId={selectedId} showMinimap={false} showZoom={false} showConf={persona === "power"}>
           <div className="chat-scrim" onClick={() => setView("map")} />
           <ChatPanel
             wsId={ws.id} g={g} llmEnabled={llmEnabled}
@@ -468,7 +499,7 @@ export default function App() {
         </StarGraph>
       ) : (
         <MapGraph g={g} highlight={highlight} selectedId={selectedId} onSelect={onSelect}
-          showMinimap={!showNodePanel && !tour && !diffOpen}>
+          showMinimap={!showNodePanel && !tour && !diffOpen} showConf={persona === "power"}>
           {diffOpen && diff && (
             <div className="diff-banner">
               <Icon.diff style={{ width: 13, height: 13 }} />
