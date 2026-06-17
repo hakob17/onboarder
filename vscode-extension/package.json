@@ -2,7 +2,7 @@
   "name": "onboarder",
   "displayName": "Onboarder",
   "description": "Interactive architecture map of your workspace: endpoints → services → repositories → tables, cross-project links, AI summaries and chat. Analyzes the open folder in place — no upload.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "publisher": "onboarder-dev",
   "private": true,
   "engines": {
@@ -45,7 +45,7 @@
         "onboarder.backendUrl": {
           "type": "string",
           "default": "",
-          "description": "Attach to an already-running Onboarder backend (e.g. http://127.0.0.1:8000). Leave empty to let the extension spawn its own."
+          "description": "Onboarder backend URL. Empty uses the bundled default (the hosted Railway deploy — uploads the folder for analysis). Set to a local URL like http://127.0.0.1:8000 to use a local backend that analyzes the folder in place."
         },
         "onboarder.backendPath": {
           "type": "string",

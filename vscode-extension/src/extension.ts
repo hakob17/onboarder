@@ -40,11 +40,11 @@ interface GraphEdge {
   kind: string;
 }
 
-// Baked-in default backend. Leave empty to spawn a local sidecar (the no-upload
-// local-analysis flow). Set this to your hosted URL (e.g. a Railway deploy) to
-// make the extension talk to it with zero user config — note a remote backend
-// can only analyze uploaded zips, not local folders (it can't read the dev's disk).
-const DEFAULT_BACKEND_URL = "";
+// Baked-in default backend (zero-config): the hosted Railway deploy. The extension
+// uploads the open folder here for analysis (a remote backend can't read the dev's
+// disk); files still open locally. Override per-machine with the "onboarder.backendUrl"
+// setting, or set it to "" to spawn a local sidecar for in-place analysis.
+const DEFAULT_BACKEND_URL = "https://onboarder-production.up.railway.app";
 
 let backend: Backend | null = null;
 let panel: vscode.WebviewPanel | null = null;
