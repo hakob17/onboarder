@@ -1,8 +1,8 @@
 {
   "name": "onboarder",
   "displayName": "Onboarder",
-  "description": "Interactive architecture map of your workspace: endpoints → services → repositories → tables, cross-project links, AI summaries and chat. Analyzes the open folder in place against a local backend, or uploads it to the hosted backend.",
-  "version": "0.9.0",
+  "description": "Interactive architecture map of your workspace: endpoints → services → repositories → tables, cross-project links, AI summaries, chat, and Jira/ADO ticket → fix suggestions. Analyzes the open folder in place against a local backend, or uploads it to the hosted backend.",
+  "version": "0.10.0",
   "publisher": "onboarder-dev",
   "private": true,
   "engines": {
@@ -25,6 +25,10 @@
       {
         "command": "onboarder.ask",
         "title": "Onboarder: Ask about this codebase"
+      },
+      {
+        "command": "onboarder.analyzeTicket",
+        "title": "Onboarder: Analyze a ticket (Jira / ADO)"
       },
       {
         "command": "onboarder.compare",

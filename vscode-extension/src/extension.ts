@@ -566,6 +566,38 @@ export function activate(context: vscode.ExtensionContext): void {
       await openMap(context, true);
       panel?.webview.postMessage({ command: "chat", question });
     })),
+    vscode.commands.registerCommand("onboarder.analyzeTicket", wrap(async () => {
+      const be = await ensureBackend(context);
+      let st: { jira?: { configured?: boolean }; ado?: { configured?: boolean } } = {};
+      try { st = await api(be.baseUrl, "/trackers/status"); } catch { /* offline → manual only */ }
+      const picks: (vscode.QuickPickItem & { source: string })[] = [];
+      if (st.jira?.configured) picks.push({ label: "Jira issue", source: "jira" });
+      if (st.ado?.configured) picks.push({ label: "Azure DevOps work item", source: "ado" });
+      picks.push({
+        label: "Paste ticket text…", source: "manual",
+        detail: picks.length === 0 ? "Connect Jira/ADO in Onboarder Settings to analyze by key" : undefined,
+      });
+      const pick = picks.length === 1 ? picks[0]
+        : await vscode.window.showQuickPick(picks, { placeHolder: "Analyze a ticket from…" });
+      if (!pick) return;
+
+      let key = "", title = "", body = "";
+      if (pick.source === "manual") {
+        body = (await vscode.window.showInputBox({
+          prompt: "Paste the ticket description / repro steps",
+          placeHolder: "e.g. Out-of-stock products can still be purchased…",
+        })) ?? "";
+        if (!body.trim()) return;
+      } else {
+        key = (await vscode.window.showInputBox({
+          prompt: pick.source === "jira" ? "Jira issue key" : "Azure DevOps work item id",
+          placeHolder: pick.source === "jira" ? "e.g. PROJ-123" : "e.g. 1234",
+        })) ?? "";
+        if (!key.trim()) return;
+      }
+      await openMap(context, true);
+      panel?.webview.postMessage({ command: "analyzeTicket", source: pick.source, key: key.trim(), title, body });
+    })),
     vscode.commands.registerCommand("onboarder.reanalyze", wrap(async () => {
       const be = await ensureBackend(context);
       const wsId = currentWsId ?? context.workspaceState.get<string>("onboarder.wsId");

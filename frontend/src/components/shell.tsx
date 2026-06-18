@@ -4,7 +4,7 @@ import type { Project, Workspace } from "../api";
 
 export type Persona = "dev" | "pm" | "power";
 
-export type RailKey = "map" | "trace" | "tables" | "infra" | "chat";
+export type RailKey = "map" | "trace" | "tables" | "infra" | "tickets" | "chat";
 
 export function Rail({ active, onNav, onHome, onSettings, hasInfra }: {
   active: RailKey;
@@ -16,6 +16,7 @@ export function Rail({ active, onNav, onHome, onSettings, hasInfra }: {
   const items: [RailKey, string][] = [
     ["map", "Map"], ["trace", "Trace"], ["tables", "Tables"],
     ...(hasInfra ? [["infra", "Infrastructure"] as [RailKey, string]] : []),
+    ["tickets", "Fix from ticket"],
     ["chat", "Chat"],
   ];
   return (
@@ -24,7 +25,7 @@ export function Rail({ active, onNav, onHome, onSettings, hasInfra }: {
         <Logo />
       </div>
       {items.map(([k, label]) => {
-        const Ico = k === "infra" ? Icon.cloud : Icon[k];
+        const Ico = k === "infra" ? Icon.cloud : k === "tickets" ? Icon.ticket : Icon[k];
         return (
           <div key={k} className={"rail-btn" + (active === k ? " active" : "")} title={label} onClick={() => onNav(k)}>
             <Ico />

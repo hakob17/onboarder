@@ -139,7 +139,7 @@ async function j<T>(resp: Response): Promise<T> {
 }
 
 export const api = {
-  health: () => j<{ status: string; llm_enabled: boolean; model: string }>(fetch(`${BASE}/health`) as any),
+  health: async () => j<{ status: string; llm_enabled: boolean; model: string }>(await fetch(`${BASE}/health`)),
 
   listWorkspaces: async () => j<Workspace[]>(await fetch(`${BASE}/workspaces`)),
   createWorkspace: async (name: string) =>
@@ -210,6 +210,25 @@ export const api = {
     })),
   runLinker: async (wsId: string) =>
     j<{ links: number }>(await fetch(`${BASE}/workspaces/${wsId}/link`, { method: "POST" })),
+
+  trackersStatus: async () => j<TrackerStatus>(await fetch(`${BASE}/trackers/status`)),
+  setJira: async (body: { base_url: string; email: string; api_token: string }) =>
+    j<TrackerStatus>(await fetch(`${BASE}/trackers/jira`, {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    })),
+  setAdo: async (body: { org: string; project: string; pat: string }) =>
+    j<TrackerStatus>(await fetch(`${BASE}/trackers/ado`, {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    })),
+  clearJira: async () => j<TrackerStatus>(await fetch(`${BASE}/trackers/jira`, { method: "DELETE" })),
+  clearAdo: async () => j<TrackerStatus>(await fetch(`${BASE}/trackers/ado`, { method: "DELETE" })),
+  getTicket: async (source: string, key: string) =>
+    j<Ticket>(await fetch(`${BASE}/trackers/${source}/issue/${encodeURIComponent(key)}`)),
+  postTicketComment: async (source: string, key: string, text: string) =>
+    j<{ ok: boolean; url: string }>(await fetch(
+      `${BASE}/trackers/${source}/issue/${encodeURIComponent(key)}/comment`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }),
+      })),
 };
 
 export function eventsUrl(wsId: string): string {
@@ -223,12 +242,7 @@ export type ChatEvent =
   | { event: "done"; data: { usage?: Record<string, number> } }
   | { event: "error"; data: { message: string } };
 
-export async function* chatStream(wsId: string, message: string): AsyncGenerator<ChatEvent> {
-  const resp = await fetch(`${BASE}/workspaces/${wsId}/chat`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ message }),
-  });
+async function* sseFrames(resp: Response): AsyncGenerator<{ event: string; data: any }> {
   if (!resp.ok || !resp.body) {
     let detail = resp.statusText;
     try {
@@ -256,8 +270,73 @@ export async function* chatStream(wsId: string, message: string): AsyncGenerator
       }
       if (!data) continue;
       try {
-        yield { event, data: JSON.parse(data) } as ChatEvent;
+        yield { event, data: JSON.parse(data) };
       } catch { /* skip malformed frame */ }
     }
   }
+}
+
+export async function* chatStream(wsId: string, message: string): AsyncGenerator<ChatEvent> {
+  const resp = await fetch(`${BASE}/workspaces/${wsId}/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message }),
+  });
+  for await (const frame of sseFrames(resp)) yield frame as ChatEvent;
+}
+
+export interface TrackerStatus {
+  jira: { configured: boolean; base_url: string | null; email: string | null };
+  ado: { configured: boolean; org: string | null; project: string | null };
+}
+
+export interface Ticket {
+  source: string;
+  key: string;
+  title: string;
+  body: string;
+  type: string | null;
+  status: string | null;
+  labels: string[];
+  comments: string[];
+  url: string | null;
+}
+
+export interface FixRootCause {
+  summary: string;
+  file: string;
+  line?: number;
+  node_id?: string;
+}
+
+export interface FixProposal {
+  problem: string;
+  root_cause: FixRootCause[];
+  proposed_fix: string;
+  implementation_prompt: string;
+  risks: string[];
+  confidence: "high" | "medium" | "low";
+  focus_node_ids?: string[];
+}
+
+export type FixEvent =
+  | { event: "ticket"; data: Ticket }
+  | { event: "text_delta"; data: { text: string } }
+  | { event: "tool_started"; data: { name: string; input: Record<string, any> } }
+  | { event: "ui_directive"; data: { node_ids: string[]; mode: "highlight" | "isolate" | "trace" } }
+  | { event: "fix_proposal"; data: FixProposal }
+  | { event: "done"; data: { usage?: Record<string, number>; had_proposal?: boolean } }
+  | { event: "error"; data: { message: string } };
+
+export async function* ticketAnalyzeStream(
+  wsId: string, source: string, key: string,
+  manual?: { title?: string; body: string },
+): AsyncGenerator<FixEvent> {
+  const resp = await fetch(
+    `${BASE}/workspaces/${wsId}/tickets/${source}/${encodeURIComponent(key)}/analyze`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(manual ?? {}),
+    });
+  for await (const frame of sseFrames(resp)) yield frame as FixEvent;
 }

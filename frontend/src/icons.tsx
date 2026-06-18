@@ -34,6 +34,7 @@ export const Icon = {
   cloud: (p: P) => <I {...p}><path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.34 9.2 4 4 0 0 0 7 17h10.5z"/></I>,
   download: (p: P) => <I {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></I>,
   bolt: (p: P) => <I {...p}><polygon points="13 2 4 14 11 14 10 22 19 9 12 9 13 2"/></I>,
+  ticket: (p: P) => <I {...p}><path d="M4 9V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3a2 2 0 0 0 0 6v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-6z"/><path d="M13 5v14" strokeDasharray="2 2"/></I>,
   x: (p: P) => <I {...p}><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></I>,
 };
 

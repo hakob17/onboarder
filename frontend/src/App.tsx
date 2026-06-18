@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api, eventsUrl,
   type DiffResult, type Graph, type GraphEdge, type GraphNode, type NodeDetail,
-  type Project, type SnapshotMeta, type Tour, type Workspace,
+  type Project, type SnapshotMeta, type Tour, type TrackerStatus, type Workspace,
 } from "./api";
 import { ChatPanel } from "./components/Chat";
+import { TicketsPanel, type TicketRequest } from "./components/Tickets";
 import { DiffPanel } from "./components/DiffPanel";
 import { InfraView } from "./components/InfraView";
 import { Icon } from "./icons";
@@ -19,11 +20,12 @@ import { AnalysisState, UploadChrome, UploadEmpty } from "./components/Upload";
 import { adaptGraph, neighborhood, pathsHighlight, type DNode } from "./model";
 
 type Phase = "home" | "analyzing" | "workspace";
-type View = "map" | "tables" | "infra" | "chat";
+type View = "map" | "tables" | "infra" | "tickets" | "chat";
 
 export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem("ob_theme") ?? "light");
   const [llmEnabled, setLlmEnabled] = useState(false);
+  const [trackerStatus, setTrackerStatus] = useState<TrackerStatus | null>(null);
   const [phase, setPhase] = useState<Phase>("home");
   const [recents, setRecents] = useState<Workspace[]>([]);
   const [ws, setWs] = useState<Workspace | null>(null);
@@ -41,6 +43,7 @@ export default function App() {
   const [tourBusy, setTourBusy] = useState(false);
   const [tourError, setTourError] = useState<string | null>(null);
   const [chatAsk, setChatAsk] = useState<string | null>(null);
+  const [ticketReq, setTicketReq] = useState<TicketRequest | null>(null);
   const [diffOpen, setDiffOpen] = useState(false);
   const [diff, setDiff] = useState<DiffResult | null>(null);
   const [diffBase, setDiffBase] = useState("latest");
@@ -105,6 +108,7 @@ export default function App() {
 
   useEffect(() => {
     api.health().then((h) => setLlmEnabled(h.llm_enabled)).catch(() => undefined);
+    api.trackersStatus().then(setTrackerStatus).catch(() => undefined);
     refreshRecents();
     const last = window.__ONBOARDER__?.workspaceId ?? localStorage.getItem("ob_ws");
     if (last) openWorkspace(last).catch(() => localStorage.removeItem("ob_ws"));
@@ -175,13 +179,17 @@ export default function App() {
   const selectByIdRef = useRef<((id: string, opts?: { toTables?: boolean }) => Promise<void>) | null>(null);
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
-      const msg = e.data as { command?: string; nodeId?: string; question?: string };
+      const msg = e.data as { command?: string; nodeId?: string; question?: string;
+        source?: string; key?: string; title?: string; body?: string };
       if (msg?.command === "select" && msg.nodeId) {
         setView("map");
         void selectByIdRef.current?.(msg.nodeId);
       } else if (msg?.command === "chat") {
         setView("chat");
         if (msg.question) setChatAsk(msg.question);
+      } else if (msg?.command === "analyzeTicket" && msg.source) {
+        setView("tickets");
+        setTicketReq({ source: msg.source, key: msg.key, title: msg.title, body: msg.body });
       } else if (msg?.command === "diff") {
         void openDiff();
       } else if (msg?.command === "refresh") {
@@ -410,6 +418,7 @@ export default function App() {
 
   const onNav = (k: RailKey) => {
     if (k === "chat") setView("chat");
+    else if (k === "tickets") { setView("tickets"); setDiffOpen(false); }
     else if (k === "tables") setView("tables");
     else if (k === "infra") { setView("infra"); setDiffOpen(false); }
     else {
@@ -420,7 +429,13 @@ export default function App() {
 
   // ---------- render ----------
   const settingsModal = settingsOpen && (
-    <SettingsModal onClose={() => setSettingsOpen(false)} onChanged={setLlmEnabled} />
+    <SettingsModal
+      onClose={() => {
+        setSettingsOpen(false);
+        api.trackersStatus().then(setTrackerStatus).catch(() => undefined);
+      }}
+      onChanged={setLlmEnabled}
+    />
   );
 
   if (phase === "home" || !ws) {
@@ -450,8 +465,8 @@ export default function App() {
 
   if (!g) return null;
 
-  const activeRail: RailKey = view === "chat" ? "chat" : view === "tables" ? "tables"
-    : view === "infra" ? "infra" : "map";
+  const activeRail: RailKey = view === "chat" ? "chat" : view === "tickets" ? "tickets"
+    : view === "tables" ? "tables" : view === "infra" ? "infra" : "map";
   const hasInfra = g.nodes.some((n) => ["infra_compute", "gateway", "queue", "topic", "datastore"].includes(n.raw.kind));
   const showNodePanel = detail && detail.kind !== "table" && view === "map" && !diffOpen;
   const showTable = view === "tables" && detail?.kind === "table";
@@ -476,6 +491,17 @@ export default function App() {
             onClose={() => setView("map")}
             ask={chatAsk}
             onAskConsumed={() => setChatAsk(null)}
+          />
+        </MapGraph>
+      ) : view === "tickets" ? (
+        <MapGraph g={g} highlight={highlight} selectedId={selectedId} showMinimap={false} showZoom={false} showConf={persona === "power"}>
+          <div className="chat-scrim" onClick={() => setView("map")} />
+          <TicketsPanel
+            wsId={ws.id} g={g} llmEnabled={llmEnabled} trackers={trackerStatus}
+            req={ticketReq} onReqConsumed={() => setTicketReq(null)}
+            onDirective={onDirective}
+            onChip={(id) => { setView("map"); void selectById(id); }}
+            onClose={() => setView("map")}
           />
         </MapGraph>
       ) : view === "infra" ? (

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type Settings } from "../api";
+import { api, type Settings, type TrackerStatus } from "../api";
 import { Icon, Spinner } from "../icons";
 
 export function SettingsModal({ onClose, onChanged }: {
@@ -100,6 +100,8 @@ export function SettingsModal({ onClose, onChanged }: {
           {savedFlash && <span style={{ fontSize: 12, color: "var(--reads)" }}>Key validated ✓</span>}
         </div>
 
+        <TrackerSettings />
+
         <div className="modal-row" style={{ marginTop: 18, borderTop: "1px solid var(--line-2)", paddingTop: 12 }}>
           <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>Model</span>
           <span className="mono" style={{ fontSize: 11.5, marginLeft: "auto", color: "var(--ink-2)" }}>
@@ -107,6 +109,94 @@ export function SettingsModal({ onClose, onChanged }: {
           </span>
         </div>
       </div>
+    </div>
+  );
+}
+
+function TrackerSettings() {
+  const [st, setSt] = useState<TrackerStatus | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [jira, setJira] = useState({ base_url: "", email: "", api_token: "" });
+  const [ado, setAdo] = useState({ org: "", project: "", pat: "" });
+
+  const refresh = () => api.trackersStatus().then(setSt).catch(() => undefined);
+  useEffect(() => { void refresh(); }, []);
+
+  async function run(name: string, fn: () => Promise<TrackerStatus>) {
+    setBusy(name);
+    setErr(null);
+    try { setSt(await fn()); }
+    catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(null); }
+  }
+
+  return (
+    <div style={{ marginTop: 18, borderTop: "1px solid var(--line-2)", paddingTop: 14 }}>
+      <div className="sec-label">Issue trackers</div>
+      <p style={{ margin: "0 0 12px", fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }}>
+        Connect Jira or Azure DevOps to analyze a ticket and get an evidence-grounded fix. Credentials
+        are validated, stored in the local database, and used only by your backend.
+      </p>
+      {err && (
+        <div style={{ fontSize: 11.5, color: "var(--writes)", fontFamily: "var(--mono)", marginBottom: 10 }}>{err}</div>
+      )}
+
+      {/* Jira */}
+      <div className="modal-row" style={{ marginBottom: 8 }}>
+        <span className="modal-dot" style={{ background: st?.jira.configured ? "var(--reads)" : "var(--ink-4)" }} />
+        <span style={{ fontSize: 12.5, fontWeight: 600 }}>Jira</span>
+        {st?.jira.configured && (
+          <span className="mono" style={{ fontSize: 11, marginLeft: "auto", color: "var(--ink-3)" }}>
+            {st.jira.email} · connected
+          </span>
+        )}
+      </div>
+      {st?.jira.configured ? (
+        <button className="tbtn" style={{ marginBottom: 14 }} disabled={busy === "jira-clear"}
+          onClick={() => void run("jira-clear", api.clearJira)}>Disconnect Jira</button>
+      ) : (
+        <div style={{ display: "grid", gap: 7, marginBottom: 14 }}>
+          <input className="ti" placeholder="https://your-domain.atlassian.net" value={jira.base_url}
+            onChange={(e) => setJira({ ...jira, base_url: e.target.value })} />
+          <input className="ti" placeholder="you@company.com" value={jira.email}
+            onChange={(e) => setJira({ ...jira, email: e.target.value })} />
+          <input className="ti" type="password" placeholder="API token" value={jira.api_token}
+            onChange={(e) => setJira({ ...jira, api_token: e.target.value })} />
+          <button className="btn-primary" style={{ justifySelf: "start" }} disabled={busy === "jira"}
+            onClick={() => void run("jira", () => api.setJira(jira))}>
+            {busy === "jira" ? "Connecting…" : "Connect Jira"}
+          </button>
+        </div>
+      )}
+
+      {/* Azure DevOps */}
+      <div className="modal-row" style={{ marginBottom: 8 }}>
+        <span className="modal-dot" style={{ background: st?.ado.configured ? "var(--reads)" : "var(--ink-4)" }} />
+        <span style={{ fontSize: 12.5, fontWeight: 600 }}>Azure DevOps</span>
+        {st?.ado.configured && (
+          <span className="mono" style={{ fontSize: 11, marginLeft: "auto", color: "var(--ink-3)" }}>
+            {st.ado.org}/{st.ado.project} · connected
+          </span>
+        )}
+      </div>
+      {st?.ado.configured ? (
+        <button className="tbtn" disabled={busy === "ado-clear"}
+          onClick={() => void run("ado-clear", api.clearAdo)}>Disconnect Azure DevOps</button>
+      ) : (
+        <div style={{ display: "grid", gap: 7 }}>
+          <input className="ti" placeholder="Organization (dev.azure.com/<org>)" value={ado.org}
+            onChange={(e) => setAdo({ ...ado, org: e.target.value })} />
+          <input className="ti" placeholder="Project" value={ado.project}
+            onChange={(e) => setAdo({ ...ado, project: e.target.value })} />
+          <input className="ti" type="password" placeholder="Personal Access Token" value={ado.pat}
+            onChange={(e) => setAdo({ ...ado, pat: e.target.value })} />
+          <button className="btn-primary" style={{ justifySelf: "start" }} disabled={busy === "ado"}
+            onClick={() => void run("ado", () => api.setAdo(ado))}>
+            {busy === "ado" ? "Connecting…" : "Connect Azure DevOps"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

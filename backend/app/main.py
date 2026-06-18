@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from .api import chat, graph, projects, settings, snapshots, tours, workspaces
+from .api import chat, graph, projects, settings, snapshots, tours, trackers, workspaces
 from .config import MODEL, STATIC_DIR, llm_enabled
 from .db import init_db
 
@@ -31,6 +31,7 @@ app.include_router(chat.router)
 app.include_router(settings.router)
 app.include_router(snapshots.router)
 app.include_router(tours.router)
+app.include_router(trackers.router)
 
 
 @app.get("/health")

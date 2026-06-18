@@ -866,3 +866,25 @@ body { overflow: hidden; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .diff-edge-row .marker { width: 7px; height: 7px; border-radius: 2px; flex: none; }
+
+/* ---- Tickets / fix-from-ticket panel ---- */
+.ti {
+  width: 100%; box-sizing: border-box;
+  border: 1px solid var(--line-strong); border-radius: 9px;
+  background: var(--surface-2); padding: 8px 11px;
+  font-family: var(--ui); font-size: 13px; color: var(--ink); outline: none;
+}
+.ti:focus { border-color: var(--brand); }
+.suggest.on { border-color: var(--brand); color: var(--brand-strong); background: var(--brand-soft); }
+.btn-primary {
+  border: none; border-radius: 9px; background: var(--brand); color: #fff;
+  font-family: var(--ui); font-size: 13px; font-weight: 600; padding: 9px 14px; cursor: pointer;
+}
+.btn-primary:hover:not(:disabled) { background: var(--brand-strong); }
+.btn-primary:disabled { opacity: 0.5; cursor: default; }
+.impl-prompt {
+  margin: 8px 0 6px; max-height: 300px; overflow: auto;
+  background: var(--surface-3); border: 1px solid var(--line); border-radius: 8px;
+  padding: 10px 12px; font-family: var(--mono); font-size: 11.5px; line-height: 1.5;
+  color: var(--ink-2); white-space: pre-wrap; word-break: break-word;
+}
