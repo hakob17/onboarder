@@ -40,11 +40,17 @@ interface GraphEdge {
   kind: string;
 }
 
-// Baked-in default backend (zero-config): the hosted Railway deploy. The extension
-// uploads the open folder here for analysis (a remote backend can't read the dev's
-// disk); files still open locally. Override per-machine with the "onboarder.backendUrl"
-// setting, or set it to "" to spawn a local sidecar for in-place analysis.
+// Hosted fallback (zero-config) backend: the Railway deploy. Used only when the
+// bundled local engine can't run; it uploads the open folder for analysis (a
+// remote backend can't read the dev's disk). Files still open locally.
 const DEFAULT_BACKEND_URL = "https://onboarder-production.up.railway.app";
+
+// Bundled, self-contained analysis engine: a PyInstaller binary downloaded once
+// from the GitHub release and launched locally, so analysis runs in place against
+// the open folder with no upload and no Python on the user's machine.
+const ENGINE_VERSION = "0.11.0";
+const ENGINE_REPO = "hakob17/onboarder";
+const ENGINE_TAG = `engine-v${ENGINE_VERSION}`;
 
 let backend: Backend | null = null;
 let panel: vscode.WebviewPanel | null = null;
@@ -95,40 +101,87 @@ async function api<T>(base: string, route: string, init?: RequestInit): Promise<
   return (await r.json()) as T;
 }
 
-async function ensureBackend(context: vscode.ExtensionContext): Promise<Backend> {
-  if (backend && (await healthy(backend.baseUrl))) {
-    return backend;
+function isLoopback(url: string): boolean {
+  return /\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/.test(url);
+}
+
+function engineExe(dir: string): string {
+  const name = process.platform === "win32" ? "onboarder-engine.exe" : "onboarder-engine";
+  return path.join(dir, "onboarder-engine", name);
+}
+
+function ensureExecutable(base: string): void {
+  try { fs.chmodSync(engineExe(base), 0o755); } catch { /* best effort */ }
+  if (process.platform === "darwin") {
+    try { cp.execFileSync("xattr", ["-dr", "com.apple.quarantine", path.join(base, "onboarder-engine")]); }
+    catch { /* not quarantined */ }
   }
-  const attachUrl = ((cfg().get<string>("backendUrl") || DEFAULT_BACKEND_URL) || "").replace(/\/$/, "");
-  if (attachUrl) {
-    if (!(await healthy(attachUrl))) {
-      throw new Error(`Onboarder backend at ${attachUrl} is not responding (/health failed)`);
-    }
-    backend = { baseUrl: attachUrl, mode: "remote" };
-    return backend;
+}
+
+/**
+ * Path to the local engine executable. Resolution order:
+ *   1. onboarder.enginePath (explicit, for dev/offline)
+ *   2. already-prepared copy in globalStorage
+ *   3. the engine bundled inside the .vsix (media/engine) — copied to globalStorage
+ *   4. download from the GitHub release (only works if the release asset is public)
+ * The runtime copy always lives in globalStorage so it is writable / chmod-able even
+ * when the extension dir or .vsix-packed perms are not.
+ */
+async function resolveEngine(context: vscode.ExtensionContext): Promise<string> {
+  const explicit = cfg().get<string>("enginePath");
+  if (explicit) {
+    if (fs.existsSync(explicit) && fs.statSync(explicit).isFile()) return explicit;
+    const inner = engineExe(explicit);
+    if (fs.existsSync(inner)) return inner;
+    throw new Error(`onboarder.enginePath is set but no engine was found at ${explicit}`);
   }
 
-  const repoBackend = repoDefault(context, "backend");
-  const backendPath = cfg().get<string>("backendPath") || repoBackend;
-  if (!fs.existsSync(path.join(backendPath, "pyproject.toml"))) {
-    throw new Error(
-      "Onboarder has no backend to use. Either set \"onboarder.backendUrl\" to a hosted backend " +
-      "(e.g. your Railway URL) to analyze uploaded projects, or set \"onboarder.backendPath\" to a " +
-      "local clone of the Onboarder backend folder to analyze this folder in place.");
+  const asset = `onboarder-engine-${process.platform}-${process.arch}.tar.gz`;
+  const base = path.join(context.globalStorageUri.fsPath, "engine", ENGINE_VERSION,
+    `${process.platform}-${process.arch}`);
+  const exe = engineExe(base);
+  if (fs.existsSync(exe)) { ensureExecutable(base); return exe; }
+  await fs.promises.mkdir(base, { recursive: true });
+
+  // Engine .tar.gz shipped inside the .vsix — extract it into the writable cache.
+  const bundledTar = path.join(context.extensionPath, "media", "engine", asset);
+  if (fs.existsSync(bundledTar)) {
+    await extractTar(bundledTar, base);
+    if (fs.existsSync(exe)) { ensureExecutable(base); return exe; }
   }
-  const port = await freePort();
-  const command = (cfg().get<string>("startCommand") || "uv run uvicorn app.main:app --port ${port}")
-    .replace("${port}", String(port));
-  const [bin, ...args] = command.split(/\s+/);
-  output.appendLine(`[onboarder] starting backend: ${command} (cwd ${backendPath})`);
-  const proc = cp.spawn(bin, args, { cwd: backendPath, env: { ...process.env } });
+
+  // Fallback: download from the release (public assets only).
+  const url = `https://github.com/${ENGINE_REPO}/releases/download/${ENGINE_TAG}/${asset}`;
+  const tmp = path.join(base, asset);
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: "Onboarder: downloading the local analysis engine (one-time)…" },
+    async () => {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`engine download failed: HTTP ${r.status} (${asset})`);
+      await fs.promises.writeFile(tmp, Buffer.from(await r.arrayBuffer()));
+    });
+  await extractTar(tmp, base);
+  await fs.promises.unlink(tmp).catch(() => undefined);
+  if (!fs.existsSync(exe)) throw new Error("engine binary missing after extraction");
+  ensureExecutable(base);
+  return exe;
+}
+
+function extractTar(tarPath: string, destDir: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const p = cp.spawn("tar", ["-xzf", tarPath, "-C", destDir]);
+    p.on("error", reject);
+    p.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`tar exited with ${code}`))));
+  });
+}
+
+/** Spawn a local backend process and wait for /health. */
+async function spawnBackend(context: vscode.ExtensionContext, proc: cp.ChildProcess, port: number, label: string): Promise<Backend> {
   proc.stdout?.on("data", (d) => output.append(d.toString()));
   proc.stderr?.on("data", (d) => output.append(d.toString()));
   proc.on("exit", (code) => {
-    output.appendLine(`[onboarder] backend exited (${code})`);
-    if (backend?.proc === proc) {
-      backend = null;
-    }
+    output.appendLine(`[onboarder] ${label} exited (${code})`);
+    if (backend?.proc === proc) backend = null;
   });
   context.subscriptions.push({ dispose: () => proc.kill() });
 
@@ -143,7 +196,75 @@ async function ensureBackend(context: vscode.ExtensionContext): Promise<Backend>
   }
   proc.kill();
   output.show(true);
-  throw new Error("Onboarder backend did not become healthy within 30s — see the Onboarder output channel");
+  throw new Error(`Onboarder ${label} did not become healthy within 30s — see the Onboarder output channel`);
+}
+
+async function spawnEngine(context: vscode.ExtensionContext): Promise<Backend> {
+  const exe = await resolveEngine(context);
+  const port = await freePort();
+  const dataDir = path.join(context.globalStorageUri.fsPath, "data");
+  fs.mkdirSync(dataDir, { recursive: true });
+  output.appendLine(`[onboarder] starting bundled engine: ${exe} (port ${port}, data ${dataDir})`);
+  const proc = cp.spawn(exe, [], {
+    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1", ONBOARDER_DATA_DIR: dataDir },
+  });
+  return spawnBackend(context, proc, port, "engine");
+}
+
+async function spawnPythonBackend(context: vscode.ExtensionContext): Promise<Backend> {
+  const backendPath = cfg().get<string>("backendPath") || repoDefault(context, "backend");
+  if (!fs.existsSync(path.join(backendPath, "pyproject.toml"))) {
+    throw new Error("onboarder.engineMode is \"python-dev\" but no backend was found — set onboarder.backendPath to a clone of the Onboarder backend.");
+  }
+  const port = await freePort();
+  const command = (cfg().get<string>("startCommand") || "uv run uvicorn app.main:app --port ${port}")
+    .replace("${port}", String(port));
+  const [bin, ...args] = command.split(/\s+/);
+  output.appendLine(`[onboarder] starting python backend: ${command} (cwd ${backendPath})`);
+  const proc = cp.spawn(bin, args, { cwd: backendPath, env: { ...process.env } });
+  return spawnBackend(context, proc, port, "python backend");
+}
+
+async function ensureBackend(context: vscode.ExtensionContext): Promise<Backend> {
+  if (backend && (await healthy(backend.baseUrl))) {
+    return backend;
+  }
+
+  // 1. Explicit URL override (local sidecar or any hosted backend).
+  const url = (cfg().get<string>("backendUrl") || "").replace(/\/$/, "");
+  if (url) {
+    if (!(await healthy(url))) {
+      throw new Error(`Onboarder backend at ${url} is not responding (/health failed)`);
+    }
+    backend = { baseUrl: url, mode: isLoopback(url) ? "local" : "remote" };
+    return backend;
+  }
+
+  const mode = cfg().get<string>("engineMode") || "bundled";
+
+  // 2. Developer mode: spawn the Python backend via uv.
+  if (mode === "python-dev") {
+    return spawnPythonBackend(context);
+  }
+
+  // 3. Default: the bundled local engine (in-place, no upload). Fall back to hosted on failure.
+  if (mode === "bundled") {
+    try {
+      return await spawnEngine(context);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      output.appendLine(`[onboarder] bundled engine unavailable: ${msg}`);
+      vscode.window.showWarningMessage(
+        `Onboarder: couldn't start the local engine (${msg}). Falling back to the hosted backend, which uploads the folder for analysis.`);
+    }
+  }
+
+  // 4. Hosted fallback (engineMode "hosted", or bundled engine failed).
+  if (!(await healthy(DEFAULT_BACKEND_URL))) {
+    throw new Error(`Onboarder hosted backend at ${DEFAULT_BACKEND_URL} is not responding`);
+  }
+  backend = { baseUrl: DEFAULT_BACKEND_URL, mode: "remote" };
+  return backend;
 }
 
 async function refreshProjects(base: string, wsId: string): Promise<ProjectInfo[]> {

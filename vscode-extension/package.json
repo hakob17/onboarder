@@ -1,8 +1,8 @@
 {
   "name": "onboarder",
   "displayName": "Onboarder",
-  "description": "Interactive architecture map of your workspace: endpoints → services → repositories → tables, cross-project links, AI summaries, chat, and Jira/ADO ticket → fix suggestions. Analyzes the open folder in place against a local backend, or uploads it to the hosted backend.",
-  "version": "0.10.0",
+  "description": "Interactive architecture map of your workspace: endpoints → services → repositories → tables, cross-project links, AI summaries, chat, and Jira/ADO ticket → fix suggestions. Ships a bundled engine that analyzes the open folder in place — no upload, no Python, no server to run.",
+  "version": "0.11.0",
   "publisher": "onboarder-dev",
   "private": true,
   "engines": {
@@ -46,10 +46,26 @@
     "configuration": {
       "title": "Onboarder",
       "properties": {
+        "onboarder.engineMode": {
+          "type": "string",
+          "enum": ["bundled", "hosted", "python-dev"],
+          "enumDescriptions": [
+            "Download and run the bundled analysis engine locally — analyzes the open folder in place, no upload, no Python (recommended).",
+            "Use the hosted backend — uploads the folder for analysis. No local engine.",
+            "Spawn the Python backend via uv from onboarder.backendPath (for backend development)."
+          ],
+          "default": "bundled",
+          "description": "How Onboarder analyzes your workspace. Ignored when onboarder.backendUrl is set."
+        },
+        "onboarder.enginePath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to a prebuilt Onboarder engine (the folder containing onboarder-engine/, or the executable itself). Empty downloads the matching build for your OS on first use."
+        },
         "onboarder.backendUrl": {
           "type": "string",
           "default": "",
-          "description": "Onboarder backend URL. Empty uses the bundled default (the hosted Railway deploy — uploads the folder for analysis). Set to a local URL like http://127.0.0.1:8000 to use a local backend that analyzes the folder in place."
+          "description": "Explicit backend URL, overriding onboarder.engineMode. A loopback URL (http://127.0.0.1:8000) is treated as a local in-place backend; any other URL uploads the folder for analysis."
         },
         "onboarder.backendPath": {
           "type": "string",
@@ -78,7 +94,8 @@
     "compile": "tsc -p .",
     "watch": "tsc -w -p .",
     "bundle-frontend": "node scripts/bundle-frontend.js",
-    "package": "npm run compile && npm run bundle-frontend && npx --yes @vscode/vsce package --allow-missing-repository"
+    "bundle-engine": "node scripts/bundle-engine.js",
+    "package": "npm run compile && npm run bundle-frontend && npm run bundle-engine && npx --yes @vscode/vsce package --allow-missing-repository"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

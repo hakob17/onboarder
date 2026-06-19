@@ -1,0 +1,5 @@
+# PyInstaller engine build artifacts (the binary is published to GitHub releases)
+build/
+dist/
+*.spec
+onboarder-engine-*.tar.gz

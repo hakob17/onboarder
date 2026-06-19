@@ -6,6 +6,7 @@ backend/tests/fixtures/*.zip
 node_modules/
 dist/
 vscode-extension/out/
+vscode-extension/media/
 *.vsix
 .env
 .DS_Store
