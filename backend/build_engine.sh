@@ -15,6 +15,16 @@ uv run --with pyinstaller pyinstaller --noconfirm --onedir --name onboarder-engi
   --collect-submodules app \
   --collect-all anthropic \
   --collect-submodules uvicorn \
+  --collect-submodules mcp.server \
+  --collect-submodules mcp.shared \
+  --collect-data mcp \
+  --hidden-import mcp.server.mcpserver \
+  --hidden-import mcp.server.stdio \
+  --collect-all starlette \
+  --collect-all sse_starlette \
+  --collect-submodules jsonschema \
+  --exclude-module mcp.cli \
+  --exclude-module typer \
   --hidden-import h11 \
   --hidden-import multipart \
   engine_main.py

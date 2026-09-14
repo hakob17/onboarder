@@ -1,0 +1,56 @@
+<idea-plugin>
+    <id>com.onboarder.intellij</id>
+    <name>Onboarder</name>
+    <vendor url="https://github.com/hakob17/onboarder">Onboarder</vendor>
+
+    <description><![CDATA[
+        <p><b>Onboarder</b> renders an interactive architecture map of the open project —
+        endpoints → controllers → services → repositories → database tables — plus AI
+        summaries, an investigation chat, and Jira/ADO ticket → fix suggestions.</p>
+        <p>Analysis runs <b>locally, in place</b>: the plugin ships a self-contained engine
+        and starts it as a background process. No zip upload, no Python, no server to run.</p>
+        <p><b>Connected to your IDE's AI.</b> Onboarder also runs as an <b>MCP server</b>, so
+        JetBrains AI Assistant (and any MCP-capable assistant) can query the code graph, trace
+        a flow, and read the exact source behind a node — grounding its answers in the real
+        architecture. A one-click action also hands Onboarder's evidence-backed context to the
+        AI tool window.</p>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow id="Onboarder"
+                    anchor="right"
+                    icon="AllIcons.Toolwindows.WebToolWindow"
+                    factoryClass="com.onboarder.OnboarderToolWindowFactory"/>
+        <projectService serviceImplementation="com.onboarder.OnboarderEngine"/>
+        <notificationGroup id="Onboarder" displayType="BALLOON"/>
+    </extensions>
+
+    <actions>
+        <group id="Onboarder.Menu" text="Onboarder" popup="true">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <action id="Onboarder.Map"
+                    class="com.onboarder.actions.MapAction"
+                    text="Map This Project"
+                    description="Analyze the open project and open the Onboarder map"/>
+            <action id="Onboarder.Ask"
+                    class="com.onboarder.actions.AskAction"
+                    text="Ask About This Codebase"
+                    description="Ask Onboarder to explain a flow or investigate an issue"/>
+            <action id="Onboarder.AnalyzeTicket"
+                    class="com.onboarder.actions.AnalyzeTicketAction"
+                    text="Analyze a Ticket (Jira / ADO)"
+                    description="Get an evidence-grounded fix suggestion for a ticket"/>
+            <separator/>
+            <action id="Onboarder.SendToAi"
+                    class="com.onboarder.actions.SendToAiAction"
+                    text="Send Architecture Context to AI"
+                    description="Copy Onboarder's evidence-grounded context and open the AI tool window"/>
+            <action id="Onboarder.ConfigureMcp"
+                    class="com.onboarder.actions.ConfigureMcpAction"
+                    text="Configure MCP Server for AI Assistant"
+                    description="Set up Onboarder as an MCP server the IDE's AI can query"/>
+        </group>
+    </actions>
+</idea-plugin>

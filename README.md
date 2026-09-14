@@ -56,9 +56,21 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 cd backend && ./build_engine.sh                          # PyInstaller engine for this OS/arch
 cd ../frontend && npm install && npm run build           # webview UI
 cd ../vscode-extension && npm install && npm run package  # → onboarder-<ver>.vsix (engine bundled)
+
+# IntelliJ / JetBrains plugin (same engine, hosted in a JCEF tool window)
+cd intellij-plugin && gradle buildPlugin                 # after building the engine + frontend above
 ```
+
+### Connect your IDE's AI (MCP)
+
+The engine doubles as an **MCP server** — run `onboarder-engine --mcp` (stdio) and any
+MCP-capable assistant (JetBrains AI Assistant, Claude Code, Cursor) can call
+`onboarder_overview`, `onboarder_find_nodes`, `onboarder_trace_flow`, `onboarder_get_node`,
+`onboarder_read_source`, `onboarder_search_code` to ground answers in the real architecture.
+The IntelliJ plugin generates the config for you (Tools → Onboarder → Configure MCP Server).
 
 Details: [backend/README.md](backend/README.md) ·
 [frontend/README.md](frontend/README.md) ·
 [vscode-extension/README.md](vscode-extension/README.md) ·
+[intellij-plugin/README.md](intellij-plugin/README.md) ·
 design: [DESIGN.md](DESIGN.md)

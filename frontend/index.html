@@ -11,6 +11,23 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Onboarder" />
+    <script>
+      // Embedding bootstrap: a host (e.g. the IntelliJ/JCEF plugin) can pass the
+      // backend origin and workspace via ?api=&ws=. A VS Code webview injects
+      // window.__ONBOARDER__ before this runs, so we never override it.
+      (function () {
+        if (window.__ONBOARDER__) return;
+        try {
+          var p = new URLSearchParams(location.search);
+          if (p.has("ws") || p.has("api")) {
+            window.__ONBOARDER__ = {
+              apiBase: p.get("api") || "",
+              workspaceId: p.get("ws") || undefined,
+            };
+          }
+        } catch (e) { /* ignore */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

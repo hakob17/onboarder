@@ -13,9 +13,17 @@ frozen bundle stays small and free of extra native deps; local single-user
 analysis doesn't need the C speedups.
 """
 import os
+import sys
 
 
 def main() -> None:
+    # MCP mode: speak the Model Context Protocol over stdio so an IDE's AI
+    # assistant can call Onboarder's grounding tools. No HTTP server, no LLM key.
+    if "--mcp" in sys.argv:
+        from app.mcp_server import run as run_mcp
+        run_mcp()
+        return
+
     import uvicorn
 
     from app.main import app
