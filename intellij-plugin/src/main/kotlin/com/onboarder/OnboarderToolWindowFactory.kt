@@ -51,6 +51,12 @@ class OnboarderToolWindowFactory : ToolWindowFactory {
             contentFactory.createContent(browser.component, "", false),
         )
 
+        // Show something immediately so the panel is never blank while the engine
+        // starts (first run extracts + boots the bundled engine — a few seconds).
+        browser.loadHTML(statusHtml("Starting Onboarder…",
+            "Extracting and starting the local analysis engine, then mapping this project. " +
+            "First run can take up to a minute."))
+
         // Analysis can take a while — do it off the EDT, then load the map.
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, "Onboarder: analyzing project…", true) {
             override fun run(indicator: ProgressIndicator) {
@@ -59,15 +65,30 @@ class OnboarderToolWindowFactory : ToolWindowFactory {
                     ApplicationManager.getApplication().invokeLater { browser.loadURL(url) }
                 } catch (e: Exception) {
                     log.warn("Onboarder: failed to start", e)
+                    val logHint = "Details in Help → Show Log in Finder (idea.log), lines with \"onboarder\"."
                     ApplicationManager.getApplication().invokeLater {
-                        browser.loadHTML("<html><body style='font-family:sans-serif;padding:24px'>" +
-                            "<h3>Onboarder couldn't start the local engine</h3><pre>" +
-                            (e.message ?: "unknown error").take(400) + "</pre></body></html>")
+                        browser.loadHTML(statusHtml("Onboarder couldn't start the local engine",
+                            (e.message ?: "unknown error").take(500) + "\n\n" + logHint))
                     }
                 }
             }
         })
     }
+
+    private fun statusHtml(title: String, detail: String): String =
+        """
+        <html><head><meta name="color-scheme" content="light dark"></head>
+        <body style="font-family:-apple-system,Segoe UI,sans-serif;margin:0;height:100vh;
+          display:flex;align-items:center;justify-content:center;background:#1e1f22;color:#dfe1e5">
+          <div style="max-width:460px;padding:28px;text-align:center">
+            <div style="font-size:15px;font-weight:600;margin-bottom:10px">${escapeHtml(title)}</div>
+            <div style="font-size:12.5px;line-height:1.6;color:#9aa0a6;white-space:pre-wrap">${escapeHtml(detail)}</div>
+          </div>
+        </body></html>
+        """.trimIndent()
+
+    private fun escapeHtml(s: String): String =
+        s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     /**
      * Make the JCEF frame look like a VS Code webview so the existing SPA bridge works

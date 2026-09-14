@@ -64,14 +64,14 @@ class OnboarderEngine(private val project: Project) : Disposable {
         Thread({ proc.inputStream.bufferedReader().forEachLine { log.debug("[engine] $it") } },
             "onboarder-engine-log").apply { isDaemon = true; start() }
 
-        val deadline = System.currentTimeMillis() + 30_000
+        val deadline = System.currentTimeMillis() + 90_000  // first run extracts + cold-boots
         while (System.currentTimeMillis() < deadline) {
             if (!proc.isAlive) throw IllegalStateException("Onboarder engine exited (code ${proc.exitValue()})")
             if (health(base)) { baseUrlCache = base; return base }
             Thread.sleep(400)
         }
         proc.destroyForcibly()
-        throw IllegalStateException("Onboarder engine did not become healthy within 30s")
+        throw IllegalStateException("Onboarder engine did not become healthy within 90s")
     }
 
     /** Ensure the open project is analyzed in place; returns the workspace id. */
