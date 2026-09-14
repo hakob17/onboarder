@@ -31,7 +31,7 @@ intellijPlatform {
         version = project.version.toString()
         ideaVersion {
             sinceBuild = "242"
-            // no untilBuild — keep compatible with future builds
+            untilBuild = provider { null }  // no upper bound — load on 2024.2 and every newer build
         }
     }
 }
