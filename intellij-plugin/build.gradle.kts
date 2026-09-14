@@ -1,5 +1,3 @@
-import org.jetbrains.intellij.platform.gradle.TestFrameworkType
-
 plugins {
     kotlin("jvm") version "2.0.21"
     id("org.jetbrains.intellij.platform") version "2.1.0"
@@ -17,10 +15,11 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        // Target IntelliJ IDEA Community 2024.2+. JCEF ships with the IDE.
+        // Build against 2024.2 (JCEF APIs are identical/stable); the plugin declares
+        // <depends>com.intellij.modules.jcef</depends> so its classloader resolves JCEF
+        // on 2024.2 (core) and on 2024.3+/2026.2 (bundled jcef plugin) alike.
         intellijIdeaCommunity("2024.2.5")
         instrumentationTools()
-        testFramework(TestFrameworkType.Platform)
     }
 }
 
@@ -39,6 +38,9 @@ intellijPlatform {
 kotlin {
     jvmToolchain(21)
 }
+
+// Skip the headless-IDE step that indexes searchable options — not needed and flaky.
+tasks.named("buildSearchableOptions") { enabled = false }
 
 // ---------------------------------------------------------------------------
 // Bundle the self-contained analysis engine and the built web UI into the

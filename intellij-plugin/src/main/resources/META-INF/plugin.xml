@@ -17,6 +17,8 @@
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
+    <!-- JCEF (embedded browser) is a bundled plugin/module since 2024.2+; the tool window needs it. -->
+    <depends>com.intellij.modules.jcef</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow id="Onboarder"
