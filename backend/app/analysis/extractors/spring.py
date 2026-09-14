@@ -14,6 +14,28 @@ REPO_BASE_RE = re.compile(
 READ_PREFIXES = ("find", "read", "get", "query", "search", "stream", "count", "exists")
 WRITE_PREFIXES = ("save", "insert", "update", "delete", "remove", "merge", "upsert", "persist")
 HTTP_CLIENT_TYPES = {"RestTemplate", "WebClient", "RestClient", "TestRestTemplate"}
+# Message-consumer annotations → (trigger, destination node kind). Each annotated
+# method becomes an entry_point (like an HTTP endpoint) triggered by a topic/queue.
+LISTENER_ANNOTATIONS = {
+    "KafkaListener": ("kafka", "topic"),
+    "KafkaHandler": ("kafka", "topic"),
+    "RabbitListener": ("rabbitmq", "queue"),
+    "JmsListener": ("jms", "queue"),
+    "SqsListener": ("sqs", "queue"),
+    "StreamListener": ("stream", "topic"),
+    "EventListener": ("event", None),
+    "TransactionalEventListener": ("event", None),
+}
+# Producer templates → (trigger, destination node kind); a send() makes a PRODUCES edge.
+MESSAGING_TEMPLATE_TYPES = {
+    "KafkaTemplate": ("kafka", "topic"),
+    "RabbitTemplate": ("rabbitmq", "queue"),
+    "AmqpTemplate": ("rabbitmq", "queue"),
+    "JmsTemplate": ("jms", "queue"),
+    "StreamBridge": ("stream", "topic"),
+}
+SEND_METHODS = {"send", "sendDefault", "convertAndSend", "convertSendAndReceive", "sendAndReceive"}
+LISTENER_DEST_RE = re.compile(r'(?:topics|queues|destination|value|topicPattern)\s*=\s*"([^"]+)"')
 REST_CALL_METHODS = {
     "getForObject": "GET", "getForEntity": "GET", "postForObject": "POST",
     "postForEntity": "POST", "postForLocation": "POST", "put": "PUT",
@@ -433,6 +455,44 @@ class SpringExtractor:
                               evidence(c.file, method.line_start))
                     endpoint_count += 1
 
+        # Message consumers: @KafkaListener / @RabbitListener / @JmsListener / @SqsListener /
+        # @StreamListener / @EventListener. Each becomes an entry_point fed by a topic/queue,
+        # so the messaging flow (topic → listener → service → repo → table) shows on the map.
+        service_quals = {c.qualified for c in controllers + services}
+        listener_classes: list[JavaClass] = []
+        seen_listener_q: set[str] = set()
+        for c in classes:
+            class_has_listener = False
+            for method in c.methods:
+                for ann_name, ann_args, ann_line in method.annotations:
+                    spec = LISTENER_ANNOTATIONS.get(ann_name)
+                    if spec is None:
+                        continue
+                    trigger, dest_kind = spec
+                    m = LISTENER_DEST_RE.search(ann_args or "")
+                    dest = m.group(1) if m else _first_string(ann_args or "")
+                    label = trigger.upper()
+                    ep_name = f"{label} {dest}" if dest else f"{label} {c.name}.{method.name}"
+                    ep_id = add_node("entry_point", ep_name, ep_name, c.file,
+                                     method.line_start, method.line_end,
+                                     {"http_method": label, "path": dest or "",
+                                      "handler": f"{c.name}.{method.name}", "controller": c.qualified,
+                                      "trigger": trigger, "destination": dest})
+                    endpoint_count += 1
+                    class_has_listener = True
+                    cls_id = logic_ids.get(c.qualified)
+                    if cls_id is None:
+                        cls_id = class_node(c, "listener")
+                        logic_ids[c.qualified] = cls_id
+                    edges.add(ep_id, cls_id, "HANDLES", 1.0, evidence(c.file, method.line_start))
+                    if dest and dest_kind:
+                        d_id = add_node(dest_kind, dest, dest, None, None, None,
+                                        {"messaging": trigger, "source": "code"})
+                        edges.add(d_id, ep_id, "DELIVERS_TO", 0.9, evidence(c.file, ann_line))
+            if class_has_listener and c.qualified not in service_quals and c.qualified not in seen_listener_q:
+                listener_classes.append(c)
+                seen_listener_q.add(c.qualified)
+
         feign_method_ids: dict[tuple[str, str], str] = {}
         feign_names = {f.name for f in feigns}
         for f in feigns:
@@ -461,7 +521,7 @@ class SpringExtractor:
                     feign_method_ids[(f.name, method.name)] = out_id
 
         callable_layers = {**logic_ids}
-        for c in controllers + services:
+        for c in controllers + services + listener_classes:
             for method in c.methods:
                 src_id = callable_layers.get(c.qualified)
                 if src_id is None:
@@ -490,6 +550,16 @@ class SpringExtractor:
                         out_id = feign_method_ids.get((rtype, inv["name"]))
                         if out_id:
                             edges.add(src_id, out_id, "MAKES_CALL", 0.95, ev)
+                        continue
+                    msg = MESSAGING_TEMPLATE_TYPES.get(rtype.split("<", 1)[0].strip())
+                    if msg and inv["name"] in SEND_METHODS:
+                        trigger, dest_kind = msg
+                        dest = next((s for s in inv["str_args"]
+                                     if s and not s.startswith(("http://", "https://", "/"))), None)
+                        if dest:
+                            d_id = add_node(dest_kind, dest, dest, None, None, None,
+                                            {"messaging": trigger, "source": "code"})
+                            edges.add(src_id, d_id, "PRODUCES", 0.8, ev)
                         continue
                     targets: list[tuple[JavaClass, float]] = []
                     for target in by_name.get(rtype, []):
