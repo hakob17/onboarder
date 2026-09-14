@@ -127,10 +127,12 @@ class OnboarderEngine(private val project: Project) : Disposable {
                 ProcessBuilder("xattr", "-dr", "com.apple.quarantine", engineDir.toString()).start().waitFor()
             }
         }
-        if (!Files.exists(webDir.resolve("index.html"))) {
-            runCatching { unzipResource("/web/onboarder-web.zip", webDir) }
-                .onFailure { log.warn("Onboarder: no bundled web UI; the engine will serve API only", it) }
-        }
+        // The web UI is tiny — always refresh it so an updated plugin never serves a
+        // stale cached copy (the extracted dir persists across plugin updates).
+        runCatching {
+            if (Files.exists(webDir)) webDir.toFile().deleteRecursively()
+            unzipResource("/web/onboarder-web.zip", webDir)
+        }.onFailure { log.warn("Onboarder: no bundled web UI; the engine will serve API only", it) }
     }
 
     private fun copyResource(name: String, dest: Path) {
