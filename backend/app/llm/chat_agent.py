@@ -86,21 +86,102 @@ def _save_message(workspace_id: str, role: str, content: str) -> None:
         conn.close()
 
 
+_CLI_ONBOARDER_TOOLS = (
+    "onboarder_overview", "onboarder_list_projects", "onboarder_find_nodes",
+    "onboarder_get_node", "onboarder_trace_flow", "onboarder_read_source",
+    "onboarder_search_code", "onboarder_list_workspaces",
+)
+_CLI_TOOL_LABEL = {
+    "onboarder_overview": "Read overview", "onboarder_find_nodes": "Queried graph",
+    "onboarder_get_node": "Read node", "onboarder_trace_flow": "Traced paths",
+    "onboarder_read_source": "Read source", "onboarder_search_code": "Searched code",
+    "onboarder_list_projects": "Listed projects", "onboarder_list_workspaces": "Listed workspaces",
+}
+
+
+def _onboarder_mcp_command() -> tuple[str, list[str]]:
+    """(command, args) to launch the Onboarder MCP server as a `claude` subprocess."""
+    import sys
+    if getattr(sys, "frozen", False):
+        return sys.executable, ["--mcp"]              # the bundled engine binary
+    return sys.executable, ["-m", "app.mcp_server"]   # dev: python -m
+
+
 def _stream_chat_cli(workspace_id: str, user_message: str):
-    """Single-shot chat via the local `claude` CLI (no key). No multi-round graph tools —
-    grounded in the workspace inventory we pass in."""
-    from . import provider
+    """Chat via the local `claude` CLI with full graph tool-use: claude connects to the
+    Onboarder MCP server (pinned to this workspace) and calls onboarder_* tools, no key."""
+    import json as _json
+    import os
+    import subprocess
+    import tempfile
+
+    from ..config import DATA_DIR, claude_cli_path
     _save_message(workspace_id, "user", user_message)
-    overview = _workspace_overview(workspace_id)
-    prompt = (f"{overview}\n\nUser question: {user_message}\n\nAnswer in plain language, grounded "
-              "in the inventory above; if it isn't enough, say what else you'd need to inspect.")
+
+    exe = claude_cli_path()
+    if not exe:
+        yield "error", {"message": "claude CLI not found — install it or use the Anthropic key provider"}
+        return
+
+    cmd, args = _onboarder_mcp_command()
+    mcp_cfg = {"mcpServers": {"onboarder": {
+        "command": cmd, "args": args,
+        "env": {"ONBOARDER_DATA_DIR": str(DATA_DIR), "ONBOARDER_WORKSPACE_ID": workspace_id},
+    }}}
+    tmp = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+    _json.dump(mcp_cfg, tmp)
+    tmp.close()
+
+    prompt = (f"{SYSTEM_PROMPT}\n\nUse the onboarder_* tools to ground every claim in this "
+              f"workspace's real code (cite file:line). Question: {user_message}")
+    allowed = ",".join(f"mcp__onboarder__{t}" for t in _CLI_ONBOARDER_TOOLS)
+    argv = [exe, "-p", prompt, "--mcp-config", tmp.name, "--allowedTools", allowed,
+            "--output-format", "stream-json", "--verbose"]
+
+    answer_parts: list[str] = []
     try:
-        answer = provider.text(prompt, system=SYSTEM_PROMPT)
+        proc = subprocess.Popen(
+            argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1,
+            env={**os.environ, "ONBOARDER_DATA_DIR": str(DATA_DIR)},
+        )
+        for line in proc.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                ev = _json.loads(line)
+            except _json.JSONDecodeError:
+                continue
+            if ev.get("type") == "assistant":
+                if ev.get("is_api_error_message") or ev.get("error"):
+                    continue  # handled by the result event below
+                for b in ev.get("message", {}).get("content", []):
+                    if b.get("type") == "text" and b.get("text"):
+                        answer_parts.append(b["text"])
+                        yield "text_delta", {"text": b["text"]}
+                    elif b.get("type") == "tool_use":
+                        short = str(b.get("name", "")).split("__")[-1]
+                        yield "tool_started", {"name": _CLI_TOOL_LABEL.get(short, short), "input": b.get("input", {})}
+            elif ev.get("type") == "result":
+                if ev.get("is_error"):
+                    yield "error", {"message": f"claude CLI: {ev.get('result') or 'error'}"}
+                elif not answer_parts and ev.get("result"):
+                    answer_parts.append(ev["result"])
+                    yield "text_delta", {"text": ev["result"]}
+        proc.wait(timeout=300)
+        if proc.returncode not in (0, None) and not answer_parts:
+            yield "error", {"message": f"claude CLI failed ({proc.returncode}): {(proc.stderr.read() or '')[:300]}"}
     except Exception as e:
         yield "error", {"message": str(e)}
-        return
-    yield "text_delta", {"text": answer}
-    _save_message(workspace_id, "assistant", answer)
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+
+    answer = "".join(answer_parts)
+    if answer:
+        _save_message(workspace_id, "assistant", answer)
     yield "done", {"usage": {}}
 
 
