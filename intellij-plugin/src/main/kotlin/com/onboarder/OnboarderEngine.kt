@@ -112,6 +112,14 @@ class OnboarderEngine(private val project: Project) : Disposable {
     // ---- internals ----
 
     private fun extractAssets() {
+        // Stamp of the bundled engine: when the plugin ships a new engine, the stamp
+        // changes and we wipe + re-extract — so updates "just install", no cache clearing.
+        val stampFile = home.resolve("asset.stamp")
+        val want = bundledEngineStamp()
+        val have = runCatching { Files.readString(stampFile) }.getOrNull()
+        if (have != want && Files.exists(engineDir)) {
+            runCatching { engineDir.toFile().deleteRecursively() }
+        }
         if (!Files.exists(enginePath)) {
             val tar = Files.createTempFile("onboarder-engine", ".tar.gz")
             copyResource("/engine/onboarder-engine.tar.gz", tar)
@@ -133,6 +141,17 @@ class OnboarderEngine(private val project: Project) : Disposable {
             if (Files.exists(webDir)) webDir.toFile().deleteRecursively()
             unzipResource("/web/onboarder-web.zip", webDir)
         }.onFailure { log.warn("Onboarder: no bundled web UI; the engine will serve API only", it) }
+        runCatching { Files.createDirectories(home); Files.writeString(stampFile, want) }
+    }
+
+    /** Short hash of the bundled engine archive, so a new build forces a fresh extract. */
+    private fun bundledEngineStamp(): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        javaClass.getResourceAsStream("/engine/onboarder-engine.tar.gz")?.use { s ->
+            val buf = ByteArray(1 shl 16)
+            while (true) { val n = s.read(buf); if (n < 0) break; md.update(buf, 0, n) }
+        } ?: return "none"
+        return md.digest().joinToString("") { "%02x".format(it) }.take(16)
     }
 
     private fun copyResource(name: String, dest: Path) {
