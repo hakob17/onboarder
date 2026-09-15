@@ -307,6 +307,91 @@ class _EdgeSet:
         return list(self._edges.values())
 
 
+_PLACEHOLDER_RE = re.compile(r"\$\{([^}]+)\}")
+
+
+def _flatten_yaml(d: dict, prefix: str, out: dict) -> None:
+    for k, v in d.items():
+        key = f"{prefix}.{k}" if prefix else str(k)
+        if isinstance(v, dict):
+            _flatten_yaml(v, key, out)
+        elif isinstance(v, (str, int, float, bool)):
+            out[key] = str(v)
+
+
+def _collect_spring_props(project_id: str) -> dict[str, str]:
+    """Flat property map from application.{yml,yaml,properties} (+ profile variants)."""
+    from ...config import resolve_root
+    from ...db import get_conn
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT root_path FROM projects WHERE id = ?", (project_id,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return {}
+    try:
+        root = resolve_root(row["root_path"])
+    except Exception:
+        return {}
+    props: dict[str, str] = {}
+    patterns = ("application.yml", "application.yaml", "application.properties",
+                "application-*.yml", "application-*.yaml", "application-*.properties",
+                "bootstrap.yml", "bootstrap.properties")
+    seen = 0
+    for pat in patterns:
+        for path in sorted(root.rglob(pat)):
+            if any(part in ("target", "build", "node_modules", ".git", ".gradle") for part in path.parts):
+                continue
+            seen += 1
+            if seen > 30:
+                break
+            try:
+                text = path.read_text("utf-8", errors="replace")
+            except OSError:
+                continue
+            if path.suffix in (".yml", ".yaml"):
+                import yaml
+                try:
+                    for doc in yaml.safe_load_all(text):
+                        if isinstance(doc, dict):
+                            _flatten_yaml(doc, "", props)
+                except yaml.YAMLError:
+                    continue
+            else:
+                for line in text.splitlines():
+                    line = line.strip()
+                    if line and not line.startswith(("#", "!")) and "=" in line:
+                        k, _, v = line.partition("=")
+                        props[k.strip()] = v.strip()
+    return props
+
+
+def _make_placeholder_resolver(project_id: str):
+    """Return resolve(value) that expands Spring ${key[:default]} placeholders (relaxed binding)."""
+    props = _collect_spring_props(project_id)
+    norm = {re.sub(r"[-_]", "", k).lower(): v for k, v in props.items()}
+
+    def resolve(value: str | None) -> str | None:
+        if not value or "${" not in value:
+            return value
+
+        def sub(m: re.Match) -> str:
+            inner = m.group(1)
+            key, sep, default = inner.partition(":")
+            key = key.strip()
+            v = props.get(key)
+            if v is None:
+                v = norm.get(re.sub(r"[-_]", "", key).lower())
+            if v is None:
+                return default.strip() if sep else m.group(0)
+            return str(v)
+
+        return _PLACEHOLDER_RE.sub(sub, value)
+
+    return resolve
+
+
 class SpringExtractor:
     name = "spring"
 
@@ -320,6 +405,8 @@ class SpringExtractor:
         for rel_path, tree, source in java_files:
             sources[rel_path] = source
             classes.extend(parse_java_file(rel_path, tree, source))
+
+        resolve_placeholder = _make_placeholder_resolver(project_id)
 
         def evidence(file: str, line: int) -> dict:
             src = sources.get(file)
@@ -470,14 +557,17 @@ class SpringExtractor:
                         continue
                     trigger, dest_kind = spec
                     m = LISTENER_DEST_RE.search(ann_args or "")
-                    dest = m.group(1) if m else _first_string(ann_args or "")
+                    raw = m.group(1) if m else _first_string(ann_args or "")
+                    dest = resolve_placeholder(raw)
                     label = trigger.upper()
                     ep_name = f"{label} {dest}" if dest else f"{label} {c.name}.{method.name}"
+                    ep_meta = {"http_method": label, "path": dest or "",
+                               "handler": f"{c.name}.{method.name}", "controller": c.qualified,
+                               "trigger": trigger, "destination": dest}
+                    if raw and raw != dest:
+                        ep_meta["destination_property"] = raw
                     ep_id = add_node("entry_point", ep_name, ep_name, c.file,
-                                     method.line_start, method.line_end,
-                                     {"http_method": label, "path": dest or "",
-                                      "handler": f"{c.name}.{method.name}", "controller": c.qualified,
-                                      "trigger": trigger, "destination": dest})
+                                     method.line_start, method.line_end, ep_meta)
                     endpoint_count += 1
                     class_has_listener = True
                     cls_id = logic_ids.get(c.qualified)
@@ -486,8 +576,10 @@ class SpringExtractor:
                         logic_ids[c.qualified] = cls_id
                     edges.add(ep_id, cls_id, "HANDLES", 1.0, evidence(c.file, method.line_start))
                     if dest and dest_kind:
-                        d_id = add_node(dest_kind, dest, dest, None, None, None,
-                                        {"messaging": trigger, "source": "code"})
+                        d_meta = {"messaging": trigger, "source": "code"}
+                        if raw and raw != dest:
+                            d_meta["property"] = raw
+                        d_id = add_node(dest_kind, dest, dest, None, None, None, d_meta)
                         edges.add(d_id, ep_id, "DELIVERS_TO", 0.9, evidence(c.file, ann_line))
             if class_has_listener and c.qualified not in service_quals and c.qualified not in seen_listener_q:
                 listener_classes.append(c)
@@ -554,11 +646,14 @@ class SpringExtractor:
                     msg = MESSAGING_TEMPLATE_TYPES.get(rtype.split("<", 1)[0].strip())
                     if msg and inv["name"] in SEND_METHODS:
                         trigger, dest_kind = msg
-                        dest = next((s for s in inv["str_args"]
-                                     if s and not s.startswith(("http://", "https://", "/"))), None)
+                        raw = next((s for s in inv["str_args"]
+                                    if s and not s.startswith(("http://", "https://", "/"))), None)
+                        dest = resolve_placeholder(raw)
                         if dest:
-                            d_id = add_node(dest_kind, dest, dest, None, None, None,
-                                            {"messaging": trigger, "source": "code"})
+                            d_meta = {"messaging": trigger, "source": "code"}
+                            if raw and raw != dest:
+                                d_meta["property"] = raw
+                            d_id = add_node(dest_kind, dest, dest, None, None, None, d_meta)
                             edges.add(src_id, d_id, "PRODUCES", 0.8, ev)
                         continue
                     targets: list[tuple[JavaClass, float]] = []
