@@ -1,6 +1,6 @@
 import type { Graph, GraphEdge, GraphNode, Project } from "./api";
 
-export type LayerKind = "endpoint" | "controller" | "service" | "repository" | "table";
+export type LayerKind = "endpoint" | "controller" | "service" | "repository" | "table" | "messaging";
 export type EdgeKind = "normal" | "reads" | "writes" | "cross" | "low";
 
 export interface DNode {
@@ -44,23 +44,24 @@ export interface DGraph {
   stageH: number;
 }
 
-const LAYER_ORDER: LayerKind[] = ["endpoint", "controller", "service", "repository", "table"];
+const LAYER_ORDER: LayerKind[] = ["endpoint", "controller", "service", "repository", "table", "messaging"];
 const LAYER_META: Record<LayerKind, { label: string; hue: string }> = {
   endpoint: { label: "Endpoints", hue: "--l-endpoint" },
   controller: { label: "Controllers", hue: "--l-controller" },
   service: { label: "Services", hue: "--l-service" },
   repository: { label: "Repositories", hue: "--l-repo" },
   table: { label: "Tables", hue: "--l-table" },
+  messaging: { label: "Messaging", hue: "--l-messaging" },
 };
 const COL_SPACING = 272;
 
 export const NODE_W: Record<LayerKind, number> = {
-  endpoint: 188, controller: 188, service: 188, repository: 188, table: 168,
+  endpoint: 188, controller: 188, service: 188, repository: 188, table: 168, messaging: 180,
 };
 export const NODE_H = 48;
 
 const PITCH: Record<LayerKind, number> = {
-  endpoint: 80, controller: 100, service: 96, repository: 110, table: 150,
+  endpoint: 80, controller: 100, service: 96, repository: 110, table: 150, messaging: 110,
 };
 
 // ---- edge path builders (from the design prototype) ----
@@ -87,7 +88,7 @@ function layerOf(n: GraphNode): LayerKind {
     case "gateway": return "controller";
     case "infra_compute": return "service";
     case "queue":
-    case "topic": return "repository";
+    case "topic": return "messaging";
     case "datastore": return "table";
     default: return "service"; // outbound_call / external_api live with services
   }
@@ -140,7 +141,8 @@ export function adaptGraph(graph: Graph, projects: Project[]): DGraph {
       path = n.metadata?.path ?? n.name;
       sub = n.metadata?.handler ?? "";
     } else if (infra) {
-      sub = [n.metadata?.infra_type, n.metadata?.runtime].filter(Boolean).join(" · ") || n.kind;
+      sub = [n.metadata?.infra_type, n.metadata?.runtime].filter(Boolean).join(" · ")
+        || n.metadata?.messaging || n.kind;
     } else if (type === "controller") {
       const r = handlesIn.get(n.id) ?? 0;
       sub = `${r} route${r === 1 ? "" : "s"}`;

@@ -128,7 +128,27 @@ class OnboarderToolWindowFactory : ToolWindowFactory {
                 val kind = msg.get("kind")?.asString ?: "text"
                 saveArtifact(project, name, data, kind)
             }
+            "askIdeAi" -> handOffToIdeAi(project, msg.get("text")?.asString ?: return)
             // select/chat/diff/refresh are host->webview; nothing to do here.
+        }
+    }
+
+    private val aiToolWindowIds = listOf("AIAssistant", "AI Assistant", "Claude Code", "Copilot Chat", "Junie")
+
+    /** Copy a tool-aware prompt for the user's question and open the IDE's AI chat to paste it. */
+    private fun handOffToIdeAi(project: Project, question: String) {
+        val prompt = "Use the Onboarder MCP tools (onboarder_overview / onboarder_find_nodes / " +
+            "onboarder_trace_flow / onboarder_get_node / onboarder_read_source / onboarder_search_code) " +
+            "to answer, grounded in this project's real code and citing file:line.\n\nQuestion: $question"
+        com.onboarder.copyToClipboard(prompt)
+        ApplicationManager.getApplication().invokeLater {
+            val tw = aiToolWindowIds.firstNotNullOfOrNull {
+                com.intellij.openapi.wm.ToolWindowManager.getInstance(project).getToolWindow(it)
+            }
+            tw?.activate(null, true)
+            com.onboarder.notify(project,
+                if (tw != null) "Question copied — paste it into the AI chat (uses your IDE's AI)."
+                else "Question copied. Open your AI assistant's chat and paste it.")
         }
     }
 

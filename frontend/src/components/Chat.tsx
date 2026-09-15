@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, chatStream } from "../api";
 import { Icon } from "../icons";
 import type { DGraph } from "../model";
+import { askIdeAi, inVsCode } from "../vscode";
 
 interface ChatMsg {
   role: "user" | "bot";
@@ -170,6 +171,13 @@ export function ChatPanel({ wsId, g, llmEnabled, onDirective, onChip, onClose, a
             <span key={s} className="suggest" onClick={() => send(s)}>{s}</span>
           ))}
         </div>
+        {inVsCode && (
+          <button className="suggest" style={{ marginBottom: 8, width: "100%", justifyContent: "center", display: "flex", gap: 6, alignItems: "center" }}
+            title="Hand this question to your IDE's AI (Claude Code / AI Assistant / Junie) — uses the IDE's model, no key"
+            onClick={() => askIdeAi(input.trim() || "Explain how this system works.")}>
+            <Icon.spark style={{ width: 13, height: 13 }} />Ask in IntelliJ AI ↗
+          </button>
+        )}
         <div className="chat-input">
           <input
             placeholder="Ask about this codebase…"

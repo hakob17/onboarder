@@ -58,6 +58,7 @@
   --l-repo-line: oklch(0.90 0.04 75);
 
   --l-table:      oklch(0.50 0.075 192);
+  --l-messaging:  oklch(0.55 0.13 150);
   --l-table-bg:   oklch(0.972 0.022 192);
   --l-table-line: oklch(0.88 0.035 192);
 
@@ -124,6 +125,7 @@
   --l-repo-line: oklch(0.42 0.06 75);
 
   --l-table:      oklch(0.76 0.09 192);
+  --l-messaging:  oklch(0.74 0.12 150);
   --l-table-bg:   oklch(0.27 0.04 192);
   --l-table-line: oklch(0.40 0.055 192);
 
