@@ -86,8 +86,31 @@ def _save_message(workspace_id: str, role: str, content: str) -> None:
         conn.close()
 
 
+def _stream_chat_cli(workspace_id: str, user_message: str):
+    """Single-shot chat via the local `claude` CLI (no key). No multi-round graph tools —
+    grounded in the workspace inventory we pass in."""
+    from . import provider
+    _save_message(workspace_id, "user", user_message)
+    overview = _workspace_overview(workspace_id)
+    prompt = (f"{overview}\n\nUser question: {user_message}\n\nAnswer in plain language, grounded "
+              "in the inventory above; if it isn't enough, say what else you'd need to inspect.")
+    try:
+        answer = provider.text(prompt, system=SYSTEM_PROMPT)
+    except Exception as e:
+        yield "error", {"message": str(e)}
+        return
+    yield "text_delta", {"text": answer}
+    _save_message(workspace_id, "assistant", answer)
+    yield "done", {"usage": {}}
+
+
 def stream_chat(workspace_id: str, user_message: str):
     """Yield (event, data) tuples: text_delta, tool_started, ui_directive, done, error."""
+    from ..config import ai_provider
+    if ai_provider() == "claude-cli":
+        yield from _stream_chat_cli(workspace_id, user_message)
+        return
+
     from . import get_client
 
     client = get_client()

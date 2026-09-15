@@ -106,28 +106,19 @@ def enrich_node(workspace_id: str, node_id: str) -> dict:
     finally:
         conn.close()
 
-    from . import get_client
+    from . import provider
 
-    client = get_client()
-    response = client.messages.parse(
-        model=MODEL,
-        max_tokens=8192,
-        messages=[{
-            "role": "user",
-            "content": PROMPT.format(
-                name=node.get("qualified_name") or node["name"],
-                kind=node["kind"],
-                scope_hint=SCOPE_HINTS.get(node["kind"], ""),
-                edges=_edges_summary(node),
-                file=display_file,
-                start=src_start,
-                end=src_end,
-                source=source,
-            ),
-        }],
-        output_format=BusinessLogicCard,
+    prompt = PROMPT.format(
+        name=node.get("qualified_name") or node["name"],
+        kind=node["kind"],
+        scope_hint=SCOPE_HINTS.get(node["kind"], ""),
+        edges=_edges_summary(node),
+        file=display_file,
+        start=src_start,
+        end=src_end,
+        source=source,
     )
-    card = response.parsed_output.model_dump()
+    card = provider.structured(prompt, BusinessLogicCard).model_dump()
     card["generated_from"] = {
         "file": display_file,
         "start": src_start,

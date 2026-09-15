@@ -90,6 +90,9 @@ export interface Settings {
   key_source: "stored" | "env" | "none";
   model: string;
   stored_key_preview: string | null;
+  ai_provider: "auto" | "anthropic" | "claude-cli";
+  effective_provider: "anthropic" | "claude-cli" | "none";
+  claude_cli: string | null;
 }
 
 export interface TourStep {
@@ -189,6 +192,12 @@ export const api = {
     })),
   clearApiKey: async () =>
     j<Settings>(await fetch(`${BASE}/settings/api-key`, { method: "DELETE" })),
+  setAiProvider: async (provider: "auto" | "anthropic" | "claude-cli") =>
+    j<Settings>(await fetch(`${BASE}/settings/ai-provider`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider }),
+    })),
   listSnapshots: async (wsId: string) =>
     j<SnapshotMeta[]>(await fetch(`${BASE}/workspaces/${wsId}/snapshots`)),
   createSnapshot: async (wsId: string, body: { label?: string; git_ref?: string }) =>

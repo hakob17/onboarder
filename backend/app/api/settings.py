@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..config import MODEL, key_source, llm_enabled
+from ..config import MODEL, ai_provider, claude_cli_path, key_source, llm_enabled
 from ..db import delete_setting, get_setting, set_setting
 
 router = APIRouter(tags=["settings"])
@@ -20,7 +20,22 @@ def get_settings() -> dict:
         "key_source": key_source(),
         "model": MODEL,
         "stored_key_preview": _masked(get_setting("anthropic_api_key")),
+        "ai_provider": get_setting("ai_provider") or "auto",
+        "effective_provider": ai_provider(),
+        "claude_cli": claude_cli_path(),
     }
+
+
+class ProviderUpdate(BaseModel):
+    provider: str  # "auto" | "anthropic" | "claude-cli"
+
+
+@router.put("/settings/ai-provider")
+def set_ai_provider(body: ProviderUpdate) -> dict:
+    if body.provider not in ("auto", "anthropic", "claude-cli"):
+        raise HTTPException(400, "provider must be auto, anthropic, or claude-cli")
+    set_setting("ai_provider", body.provider)
+    return get_settings()
 
 
 class KeyUpdate(BaseModel):

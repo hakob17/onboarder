@@ -39,5 +39,43 @@ def key_source() -> str:
     return "none"
 
 
+def claude_cli_path() -> str | None:
+    """Path to the local `claude` (Claude Code) CLI, if available — used for key-free AI."""
+    import shutil
+
+    from .db import get_setting
+    configured = get_setting("claude_cli_path")
+    if configured and Path(configured).exists():
+        return configured
+    found = shutil.which("claude")
+    if found:
+        return found
+    for c in ("/opt/homebrew/bin/claude", "/usr/local/bin/claude",
+              str(Path.home() / ".local/bin/claude"), str(Path.home() / ".claude/local/claude")):
+        if Path(c).exists():
+            return c
+    return None
+
+
+def ai_provider() -> str:
+    """Effective AI backend: 'anthropic' (API key), 'claude-cli' (local CLI), or 'none'.
+
+    The stored 'ai_provider' setting selects it; 'auto' (default) prefers a key, then the CLI.
+    """
+    from .db import get_setting
+    choice = get_setting("ai_provider") or "auto"
+    have_key = key_source() != "none"
+    have_cli = claude_cli_path() is not None
+    if choice == "anthropic":
+        return "anthropic" if have_key else "none"
+    if choice == "claude-cli":
+        return "claude-cli" if have_cli else "none"
+    if have_key:
+        return "anthropic"
+    if have_cli:
+        return "claude-cli"
+    return "none"
+
+
 def llm_enabled() -> bool:
-    return key_source() != "none"
+    return ai_provider() != "none"

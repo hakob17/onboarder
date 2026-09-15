@@ -49,10 +49,22 @@ export function SettingsModal({ onClose, onChanged }: {
     }
   };
 
+  const setProvider = async (p: "auto" | "anthropic" | "claude-cli") => {
+    setBusy(true);
+    try {
+      const s = await api.setAiProvider(p);
+      setSettings(s);
+      onChanged(s.llm_enabled);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const statusText = !settings ? "…"
-    : settings.key_source === "stored" ? `AI features enabled — using your key (${settings.stored_key_preview})`
-    : settings.key_source === "env" ? "AI features enabled — using the backend environment key"
-    : "AI features disabled — no API key configured";
+    : settings.effective_provider === "claude-cli" ? "AI enabled — using your local Claude CLI (no key)"
+    : settings.key_source === "stored" ? `AI enabled — using your key (${settings.stored_key_preview})`
+    : settings.key_source === "env" ? "AI enabled — using the backend environment key"
+    : "AI disabled — choose a provider below";
   const statusColor = settings?.llm_enabled ? "var(--reads)" : "var(--writes)";
 
   return (
@@ -68,6 +80,24 @@ export function SettingsModal({ onClose, onChanged }: {
           <span className="modal-dot" style={{ background: statusColor }} />
           <span style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{statusText}</span>
         </div>
+
+        <div className="sec-label" style={{ marginTop: 16 }}>AI answers use</div>
+        <div className="suggest-row" style={{ marginBottom: 6 }}>
+          {([["auto", "Auto"], ["anthropic", "Anthropic key"], ["claude-cli", "Local Claude CLI"]] as const).map(([v, label]) => {
+            const disabled = v === "claude-cli" && !settings?.claude_cli;
+            const on = settings?.ai_provider === v;
+            return (
+              <span key={v} className={"suggest" + (on ? " on" : "")}
+                style={{ opacity: disabled ? 0.4 : 1, pointerEvents: disabled || busy ? "none" : "auto" }}
+                onClick={() => setProvider(v)}>{label}</span>
+            );
+          })}
+        </div>
+        <p style={{ margin: "0 0 4px", fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.5 }}>
+          {settings?.claude_cli
+            ? "Local Claude CLI detected — uses your Claude subscription, no API key needed."
+            : "Local Claude CLI not detected — install it, or use an Anthropic key below."}
+        </p>
 
         <div className="sec-label" style={{ marginTop: 16 }}>Anthropic API key</div>
         <p style={{ margin: "0 0 10px", fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }}>

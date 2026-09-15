@@ -73,6 +73,42 @@ PROPOSE_FIX_TOOL = {
 FIX_TOOLS = TOOLS + [PROPOSE_FIX_TOOL]
 
 
+from pydantic import BaseModel
+
+
+class _FixRootCause(BaseModel):
+    summary: str
+    file: str = ""
+    line: int | None = None
+    node_id: str | None = None
+
+
+class _FixProposal(BaseModel):
+    problem: str
+    root_cause: list[_FixRootCause] = []
+    proposed_fix: str
+    implementation_prompt: str
+    risks: list[str] = []
+    confidence: str = "medium"
+
+
+def _stream_fix_cli(workspace_id: str, ticket: dict, ticket_prompt: str):
+    """Single-shot ticket→fix via the local `claude` CLI (no key)."""
+    from . import provider
+    label = f"{ticket.get('source', '').upper()} {ticket.get('key', '')}: {ticket.get('title', '')}"
+    _save(workspace_id, "user", f"Analyze ticket — {label}")
+    prompt = (SYSTEM_PROMPT + "\n\n" + _workspace_overview(workspace_id) + "\n\n" + ticket_prompt
+              + "\n\nProduce the fix proposal now.")
+    try:
+        proposal = provider.structured(prompt, _FixProposal).model_dump()
+    except Exception as e:
+        yield "error", {"message": str(e)}
+        return
+    yield "fix_proposal", proposal
+    _save(workspace_id, "assistant", f"Fix proposal for {label}:\n{proposal.get('proposed_fix', '')}")
+    yield "done", {"usage": {}, "had_proposal": True}
+
+
 def _save(workspace_id: str, role: str, content: str) -> None:
     conn = get_conn()
     try:
@@ -86,6 +122,11 @@ def _save(workspace_id: str, role: str, content: str) -> None:
 
 def stream_fix(workspace_id: str, ticket: dict, ticket_prompt: str):
     """Yield (event, data): text_delta, tool_started, ui_directive, fix_proposal, done, error."""
+    from ..config import ai_provider
+    if ai_provider() == "claude-cli":
+        yield from _stream_fix_cli(workspace_id, ticket, ticket_prompt)
+        return
+
     from . import get_client
 
     client = get_client()
