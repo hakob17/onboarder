@@ -314,7 +314,7 @@ export function TablePanel({ wsId, g, detail, projName, onClose, onReload }: {
 }
 
 // ---------- logic / repository / outbound detail ----------
-export function NodePanel({ wsId, g, detail, llmEnabled, onClose, onJump, onReload }: {
+export function NodePanel({ wsId, g, detail, llmEnabled, onClose, onJump, onReload, onFlowReport, flowBusy }: {
   wsId: string;
   g: DGraph;
   detail: NodeDetail;
@@ -322,6 +322,8 @@ export function NodePanel({ wsId, g, detail, llmEnabled, onClose, onJump, onRelo
   onClose: () => void;
   onJump: (nodeId: string) => void;
   onReload: () => void;
+  onFlowReport?: (nodeId: string) => void;
+  flowBusy?: boolean;
 }) {
   const dn = g.byId.get(detail.id);
   const [code, setCode] = useState<{ lines: string[]; start: number } | null>(null);
@@ -363,6 +365,13 @@ export function NodePanel({ wsId, g, detail, llmEnabled, onClose, onJump, onRelo
         </div>
       </div>
       <div className="panel-body">
+        {onFlowReport && ["entry_point", "page", "screen"].includes(detail.kind) && (
+          <button className="tbtn" style={{ width: "100%", justifyContent: "center", marginBottom: 14 }}
+            disabled={flowBusy} onClick={() => onFlowReport(detail.id)}>
+            <Icon.spark style={{ color: "var(--brand)" }} />
+            {flowBusy ? "Tracing flow…" : "Export flow report"}
+          </button>
+        )}
         {detail.kind !== "outbound_call" && (
           <AICard wsId={wsId} nodeId={detail.id} card={detail.card} llmEnabled={llmEnabled} />
         )}

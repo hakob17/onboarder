@@ -127,6 +127,13 @@ export interface RepoOverview {
   links: RepoLink[];
 }
 
+export interface FlowReport {
+  title: string;
+  markdown: string;
+  node_ids: string[];
+  has_ai: boolean;
+}
+
 export interface TourStep {
   title: string;
   narration: string;
@@ -196,6 +203,8 @@ export const api = {
 
   getOverview: async (wsId: string) =>
     j<RepoOverview>(await fetch(`${BASE}/workspaces/${wsId}/overview`)),
+  getFlowReport: async (wsId: string, fromId: string) =>
+    j<FlowReport>(await fetch(`${BASE}/workspaces/${wsId}/flow-report?from_id=${encodeURIComponent(fromId)}`)),
   getGraph: async (wsId: string, projectId?: string) => {
     const q = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
     return j<Graph>(await fetch(`${BASE}/workspaces/${wsId}/graph${q}`));

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api, eventsUrl,
-  type DiffResult, type Graph, type GraphEdge, type GraphNode, type NodeDetail,
+  type DiffResult, type FlowReport, type Graph, type GraphEdge, type GraphNode, type NodeDetail,
   type Project, type RepoOverview, type SnapshotMeta, type Tour, type TrackerStatus, type Workspace,
 } from "./api";
+import { FlowReportModal } from "./components/FlowReport";
 import { ChatPanel } from "./components/Chat";
 import { RepoMap } from "./components/RepoMap";
 import { TicketsPanel, type TicketRequest } from "./components/Tickets";
@@ -14,7 +15,7 @@ import { MapGraph, type Highlight } from "./components/MapGraph";
 import { NodePanel, TablePanel } from "./components/panels";
 import { SettingsModal } from "./components/SettingsModal";
 import { Rail, TopBar, type Persona, type RailKey } from "./components/shell";
-import { exportJson, exportSvg } from "./export";
+import { exportJson, exportPng, exportSvg } from "./export";
 import { StarGraph } from "./components/StarGraph";
 import { TourCard } from "./components/TourCard";
 import { AnalysisState, UploadChrome, UploadEmpty } from "./components/Upload";
@@ -29,6 +30,8 @@ export default function App() {
   const [trackerStatus, setTrackerStatus] = useState<TrackerStatus | null>(null);
   const [overview, setOverview] = useState<RepoOverview | null>(null);
   const [activeProject, setActiveProject] = useState<string | null>(null);
+  const [flowReport, setFlowReport] = useState<FlowReport | null>(null);
+  const [flowBusy, setFlowBusy] = useState(false);
   const [phase, setPhase] = useState<Phase>("home");
   const [recents, setRecents] = useState<Workspace[]>([]);
   const [ws, setWs] = useState<Workspace | null>(null);
@@ -416,13 +419,26 @@ export default function App() {
     setDiff(null);
   };
 
-  async function onExport(format: "svg" | "json") {
+  async function onExport(format: "svg" | "png" | "json") {
     const base = (ws?.name || "onboarder").replace(/[^\w.-]+/g, "-");
     try {
       if (format === "json" && graphRaw) exportJson(base, graphRaw);
       else if (format === "svg") await exportSvg(base);
+      else if (format === "png") await exportPng(base);
     } catch (e) {
       setTourError(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  async function openFlowReport(nodeId: string) {
+    if (!ws) return;
+    setFlowBusy(true);
+    try {
+      setFlowReport(await api.getFlowReport(ws.id, nodeId));
+    } catch (e) {
+      setTourError(`Flow report failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setFlowBusy(false);
     }
   }
 
@@ -601,6 +617,8 @@ export default function App() {
               onClose={() => { setDetail(null); setSelectedId(null); setHighlight(null); }}
               onJump={(id) => void selectById(id)}
               onReload={() => void refreshGraph()}
+              onFlowReport={(id) => void openFlowReport(id)}
+              flowBusy={flowBusy}
             />
           )}
           {tour && (
@@ -618,6 +636,7 @@ export default function App() {
         </MapGraph>
       )}
       {settingsModal}
+      {flowReport && <FlowReportModal report={flowReport} g={g} onClose={() => setFlowReport(null)} />}
     </div>
   );
 }

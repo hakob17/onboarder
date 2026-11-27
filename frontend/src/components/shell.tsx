@@ -52,7 +52,7 @@ export function describeProjects(projects: Project[]): string {
 
 const PERSONAS: [Persona, string][] = [["dev", "Developer"], ["pm", "Manager"], ["power", "Power"]];
 
-function ExportMenu({ onExport }: { onExport: (f: "svg" | "json") => void }) {
+function ExportMenu({ onExport }: { onExport: (f: "svg" | "png" | "json") => void }) {
   const [open, setOpen] = useState(false);
   return (
     <div style={{ position: "relative" }}>
@@ -67,7 +67,7 @@ function ExportMenu({ onExport }: { onExport: (f: "svg" | "json") => void }) {
             background: "var(--surface)", border: "1px solid var(--line)",
             borderRadius: "var(--border-radius-md)", boxShadow: "var(--shadow-lg)", padding: 4,
           }}>
-            {([["svg", "SVG image"], ["json", "JSON graph"]] as const).map(([f, label]) => (
+            {([["svg", "SVG image"], ["png", "PNG image"], ["json", "JSON graph"]] as const).map(([f, label]) => (
               <div key={f}
                 style={{ padding: "7px 11px", fontSize: 12.5, borderRadius: 6, cursor: "pointer", color: "var(--ink-2)" }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface-3)")}
@@ -97,7 +97,7 @@ export function TopBar({ ws, projects, theme, onTheme, onReanalyze, search, onSe
   compareActive: boolean;
   persona: Persona;
   onPersona: (p: Persona) => void;
-  onExport: (f: "svg" | "json") => void;
+  onExport: (f: "svg" | "png" | "json") => void;
 }) {
   const stacks = [...new Set(projects.map((p) => p.stack))];
   const files = projects.reduce((s, p) => s + Number(p.stats?.files ?? 0), 0);

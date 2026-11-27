@@ -34,6 +34,17 @@ def get_trace(ws_id: str, from_id: str, to_id: str | None = None, max_depth: int
     return {"paths": graph.trace(ws_id, from_id, to_id, min(max_depth, 15))}
 
 
+@router.get("/workspaces/{ws_id}/flow-report")
+def flow_report(ws_id: str, from_id: str) -> dict:
+    """Markdown report of the flow from an endpoint, traced end-to-end (AI narrative if a
+    key / local CLI is configured, otherwise the grounded step list)."""
+    from ..llm.flow_report import generate_flow_report
+    try:
+        return generate_flow_report(ws_id, from_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from e
+
+
 @router.get("/workspaces/{ws_id}/source")
 def get_source(ws_id: str, project_id: str, file: str, start: int | None = None,
                end: int | None = None) -> dict:
