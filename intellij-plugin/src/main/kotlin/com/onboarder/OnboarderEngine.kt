@@ -86,7 +86,7 @@ class OnboarderEngine(private val project: Project) : Disposable {
         val wsId = JsonParser.parseString(created).asJsonObject["id"].asString
         // in-place: send the path, not a zip
         postJson("$base/workspaces/$wsId/projects/local", """{"path":${quote(root)}}""")
-        waitForAnalysis(base, wsId)
+        waitForProjects(base, wsId)
         wsIdCache = wsId
         return wsId
     }
@@ -179,15 +179,18 @@ class OnboarderEngine(private val project: Project) : Disposable {
         }
     }
 
-    private fun waitForAnalysis(base: String, wsId: String) {
-        val deadline = System.currentTimeMillis() + 180_000
+    /**
+     * Open the UI as soon as the projects are registered, not when analysis finishes.
+     * The web overview lists every repo and streams each one's progress live (SSE), so a
+     * folder of large repos no longer sits on a blank tool window up to the old 180s limit.
+     */
+    private fun waitForProjects(base: String, wsId: String) {
+        val deadline = System.currentTimeMillis() + 20_000
         while (System.currentTimeMillis() < deadline) {
             val body = getBody("$base/workspaces/$wsId/projects") ?: return
             val arr = JsonParser.parseString(body).asJsonArray
-            if (arr.size() == 0) { Thread.sleep(800); continue }
-            val statuses = arr.map { it.asJsonObject["status"].asString }
-            if (statuses.all { it == "ready" || it == "failed" }) return
-            Thread.sleep(1000)
+            if (arr.size() > 0) return
+            Thread.sleep(300)
         }
     }
 

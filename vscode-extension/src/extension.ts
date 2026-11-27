@@ -365,6 +365,20 @@ async function waitForAnalysis(base: string, wsId: string, report?: (msg: string
   }
 }
 
+// Open the map as soon as the repos are registered — the web overview lists every repo
+// and streams each one's analysis progress live (SSE), so a folder of large repos no
+// longer blocks on the full-analysis wait before anything appears.
+async function waitForProjectsRegistered(base: string, wsId: string): Promise<void> {
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
+    const projects = await refreshProjects(base, wsId);
+    if (projects.length > 0) {
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+}
+
 async function ensureWorkspace(context: vscode.ExtensionContext, base: string, quick: boolean): Promise<string> {
   if (quick && currentWsId) {
     return currentWsId;
@@ -402,8 +416,8 @@ async function ensureWorkspace(context: vscode.ExtensionContext, base: string, q
       { location: vscode.ProgressLocation.Notification, title: "Onboarder: uploading workspace…" },
       async (progress) => {
         await uploadAllFolders(base, wsId!, folders, (m) => progress.report({ message: m }));
-        progress.report({ message: "analyzing…" });
-        await waitForAnalysis(base, wsId!, (m) => progress.report({ message: m }));
+        progress.report({ message: "preparing map…" });
+        await waitForProjectsRegistered(base, wsId!);
       },
     );
     currentWsId = wsId;
@@ -417,8 +431,8 @@ async function ensureWorkspace(context: vscode.ExtensionContext, base: string, q
     });
   }
   await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: "Onboarder: analyzing workspace…" },
-    (progress) => waitForAnalysis(base, wsId!, (m) => progress.report({ message: m })),
+    { location: vscode.ProgressLocation.Notification, title: "Onboarder: preparing map…" },
+    () => waitForProjectsRegistered(base, wsId!),
   );
   currentWsId = wsId;
   return wsId;
