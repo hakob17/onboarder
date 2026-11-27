@@ -15,9 +15,28 @@ export interface DNode {
   foreign?: boolean;
   infra?: string;
   cols?: string[];
+  group: string;        // package/folder cluster id (within its column)
+  order: number;        // stable index within its column (barycenter order)
   x: number;
   y: number;
   raw: GraphNode;
+}
+
+// A package/folder cluster inside one layer column. Dense columns collapse their
+// members into these cards so a repo with hundreds of classes stays navigable.
+export interface DGroup {
+  id: string;
+  col: LayerKind;
+  label: string;        // last package segment, e.g. "billing"
+  title: string;        // full package path, e.g. "com.acme.billing"
+  memberIds: string[];  // ordered
+  collapsible: boolean; // its column is dense enough to group
+  // filled by relayout:
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  collapsed: boolean;
 }
 
 export interface DEdge {
@@ -39,6 +58,7 @@ export interface DGraph {
   edges: DEdge[];
   byId: Map<string, DNode>;
   cols: DCol[];
+  groups: DGroup[];
   links: GraphEdge[];
   stageW: number;
   stageH: number;
@@ -63,6 +83,34 @@ export const NODE_H = 48;
 const PITCH: Record<LayerKind, number> = {
   endpoint: 80, controller: 100, service: 96, repository: 110, table: 150, messaging: 110,
 };
+
+// Package grouping: a column with more than DENSE_MIN nodes spread over at least
+// GROUP_MIN packages collapses into package cards instead of a scroll-wall.
+const DENSE_MIN = 16;
+const GROUP_MIN = 3;
+export const GROUP_W = 212;
+const GROUP_COLLAPSED_H = 58;
+const GROUP_HEAD_H = 34;
+const GROUP_GAP = 16;
+const GROUP_PAD = 11;
+const NODE_GAP = 8;
+const COL_TOP = 70;
+
+const SRC_ROOT = /^(?:app\/)?src\/(?:main\/)?(?:java|kotlin|scala|groovy|resources)\/|^(?:app\/)?src\/|^app\//;
+
+/** Package / folder of a source file, used to cluster a column's nodes. */
+export function packageKey(file?: string): { id: string; label: string; title: string } {
+  if (!file) return { id: "~root", label: "root", title: "(top level)" };
+  const parts = file.split("/");
+  parts.pop(); // drop filename
+  let dir = parts.join("/").replace(SRC_ROOT, "");
+  if (!dir) return { id: "~root", label: "root", title: "top level" };
+  const segs = dir.split("/").filter(Boolean);
+  const label = segs[segs.length - 1] || "root";
+  // dotted for java-ish deep packages, slashes for shallow web folders
+  const title = segs.length > 2 ? segs.join(".") : segs.join("/");
+  return { id: dir, label, title };
+}
 
 // ---- edge path builders (from the design prototype) ----
 export function curvePath(x1: number, y1: number, x2: number, y2: number): string {
@@ -161,7 +209,7 @@ export function adaptGraph(graph: Graph, projects: Project[]): DGraph {
       foreign: multiProject && n.project_id !== primaryProject,
       infra,
       cols: type === "table" && !infra ? (n.metadata?.columns ?? []).map((c: any) => c.name) : undefined,
-      x: 0, y: 0, raw: n,
+      group: "", order: 0, x: 0, y: 0, raw: n,
     };
   });
 
@@ -177,8 +225,9 @@ export function adaptGraph(graph: Graph, projects: Project[]): DGraph {
     id: k, label: LAYER_META[k].label, hue: LAYER_META[k].hue, x: 28 + i * COL_SPACING,
   }));
 
+  // group each node by package, and order nodes within each column (barycenter, like the design)
   const order = new Map<string, number>();
-  let maxBottom = 0;
+  const groups: DGroup[] = [];
   for (const col of cols) {
     const colNodes = nodes.filter((n) => n.type === col.id);
     if (col.id === "endpoint") {
@@ -193,27 +242,106 @@ export function adaptGraph(graph: Graph, projects: Project[]): DGraph {
         return score(a) - score(b) || a.label.localeCompare(b.label);
       });
     }
+    // assign package groups for this column
+    const byPkg = new Map<string, DGroup>();
     colNodes.forEach((n, i) => {
       order.set(n.id, i);
-      n.x = col.x;
-      n.y = 70 + i * PITCH[col.id];
-      maxBottom = Math.max(maxBottom, n.y + NODE_H);
+      n.order = i;
+      const pk = packageKey(n.raw?.file);
+      const gid = `${col.id}::${pk.id}`;
+      n.group = gid;
+      let gr = byPkg.get(gid);
+      if (!gr) {
+        gr = { id: gid, col: col.id, label: pk.label, title: pk.title, memberIds: [],
+          collapsible: false, x: 0, y: 0, w: GROUP_W, h: GROUP_COLLAPSED_H, collapsed: false };
+        byPkg.set(gid, gr);
+        groups.push(gr);
+      }
+      gr.memberIds.push(n.id);
     });
+    const colGroups = [...byPkg.values()];
+    // a column groups only when it is both crowded and genuinely multi-package
+    const dense = colNodes.length > DENSE_MIN && colGroups.length >= GROUP_MIN;
+    for (const gr of colGroups) gr.collapsible = dense;
   }
 
   const edges: DEdge[] = allEdges
     .filter((e) => e.kind !== "HANDLES" || true)
     .map((e) => ({ from: e.src, to: e.dst, kind: mapEdgeKind(e), raw: e }));
 
-  const lastX = cols.length ? cols[cols.length - 1].x : 28;
-  return {
+  const g: DGraph = {
     nodes,
     edges,
     byId: new Map(nodes.map((n) => [n.id, n])),
     cols,
+    groups,
     links: graph.cross_edges,
-    stageW: Math.max(1000, lastX + 188 + 36),
-    stageH: Math.max(860, maxBottom + 90),
+    stageW: 1000,
+    stageH: 860,
+  };
+  // default layout: dense columns start collapsed
+  const def = relayout(g, new Set(groups.filter((gr) => gr.collapsible).map((gr) => gr.id)));
+  for (const n of nodes) { const p = def.pos.get(n.id); if (p) { n.x = p.x; n.y = p.y; } }
+  g.stageW = def.stageW;
+  g.stageH = def.stageH;
+  return g;
+}
+
+export interface LayoutResult {
+  pos: Map<string, { x: number; y: number }>;
+  groups: DGroup[];           // placed (collapsed ones carry boxes; all carry x/y/h/collapsed)
+  stageW: number;
+  stageH: number;
+}
+
+/** Position a column either as individual node cards (sparse columns, or expanded
+ *  packages) or as collapsed package cards, given which group ids are collapsed. */
+export function relayout(g: DGraph, collapsed: Set<string>): LayoutResult {
+  const pos = new Map<string, { x: number; y: number }>();
+  const placed: DGroup[] = [];
+  const nodeById = g.byId;
+  let maxBottom = 0;
+  let lastX = 28;
+  for (const col of g.cols) {
+    const x = col.x;
+    lastX = x;
+    const colGroups = g.groups.filter((gr) => gr.col === col.id)
+      .sort((a, b) => (nodeById.get(a.memberIds[0])?.order ?? 0) - (nodeById.get(b.memberIds[0])?.order ?? 0));
+    const grouped = colGroups.some((gr) => gr.collapsible);
+    let y = COL_TOP;
+    if (!grouped) {
+      // sparse column: plain vertical stack of nodes, original behavior
+      const colNodes = g.nodes.filter((n) => n.type === col.id).sort((a, b) => a.order - b.order);
+      for (const n of colNodes) {
+        pos.set(n.id, { x, y });
+        y += PITCH[col.id];
+      }
+      maxBottom = Math.max(maxBottom, y);
+      continue;
+    }
+    for (const gr of colGroups) {
+      if (collapsed.has(gr.id)) {
+        placed.push({ ...gr, x, y, w: GROUP_W, h: GROUP_COLLAPSED_H, collapsed: true });
+        y += GROUP_COLLAPSED_H + GROUP_GAP;
+      } else {
+        const members = [...gr.memberIds].sort((a, b) => (nodeById.get(a)?.order ?? 0) - (nodeById.get(b)?.order ?? 0));
+        const h = GROUP_HEAD_H + GROUP_PAD + members.length * (NODE_H + NODE_GAP) - NODE_GAP + GROUP_PAD;
+        placed.push({ ...gr, x, y, w: GROUP_W, h, collapsed: false });
+        let my = y + GROUP_HEAD_H + GROUP_PAD;
+        for (const id of members) {
+          pos.set(id, { x: x + GROUP_PAD, y: my });
+          my += NODE_H + NODE_GAP;
+        }
+        y += h + GROUP_GAP;
+      }
+      maxBottom = Math.max(maxBottom, y);
+    }
+  }
+  return {
+    pos,
+    groups: placed,
+    stageW: Math.max(1000, lastX + GROUP_W + 40),
+    stageH: Math.max(680, maxBottom + 80),
   };
 }
 
