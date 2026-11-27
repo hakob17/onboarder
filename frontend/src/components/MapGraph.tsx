@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { Icon } from "../icons";
 import {
   NODE_H, NODE_W, curvePath, edgeKey, relayout,
@@ -22,7 +22,7 @@ function Minimap({ g, groups, pos, highlight }: {
 }) {
   const layerColor: Record<string, string> = {
     endpoint: "--l-endpoint", controller: "--l-controller", service: "--l-service",
-    repository: "--l-repo", table: "--l-table", messaging: "--l-messaging",
+    repository: "--l-repo", graphql: "--l-graphql", table: "--l-table", messaging: "--l-messaging",
   };
   const stageW = Math.max(1000, ...groups.map((gr) => gr.x + gr.w), ...[...pos.values()].map((p) => p.x + 188));
   const stageH = Math.max(680, ...groups.map((gr) => gr.y + gr.h), ...[...pos.values()].map((p) => p.y + NODE_H));
@@ -198,6 +198,26 @@ export function MapGraph({ g, highlight, selectedId, onSelect, showMinimap = tru
 
   const visibleNodes = useMemo(() => g.nodes.filter((n) => L.pos.has(n.id)), [g, L]);
 
+  // When a node is selected, scroll it toward the left so its outgoing wires and the
+  // nodes it calls land in the visible area beside the detail panel (which overlays the right).
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!selectedId) return;
+    const sc = scrollRef.current;
+    if (!sc) return;
+    const raf = requestAnimationFrame(() => {
+      const el = sc.querySelector(".node.sel") as HTMLElement | null;
+      if (!el) return;
+      const er = el.getBoundingClientRect(), sr = sc.getBoundingClientRect();
+      sc.scrollTo({
+        left: Math.max(0, sc.scrollLeft + (er.left - sr.left) - sc.clientWidth * 0.16),
+        top: Math.max(0, sc.scrollTop + (er.top - sr.top) - sc.clientHeight * 0.38),
+        behavior: "smooth",
+      });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [selectedId, L]);
+
   return (
     <div className="body" onClick={() => onSelect?.(null)}>
       <div className="canvas-grid" />
@@ -209,7 +229,7 @@ export function MapGraph({ g, highlight, selectedId, onSelect, showMinimap = tru
           <button className="tbtn sm" onClick={() => setCollapsed(defaultCollapsed(g))}>Collapse all</button>
         </div>
       )}
-      <div className="map-scroll">
+      <div className="map-scroll" ref={scrollRef}>
         <div className="map-stage" style={{ width: stageW * zoom, height: stageH * zoom }}>
           <div style={{ transform: `scale(${zoom})`, transformOrigin: "0 0", width: stageW, height: stageH, position: "relative" }}>
             <svg className="edges" width={stageW} height={stageH} viewBox={`0 0 ${stageW} ${stageH}`}>

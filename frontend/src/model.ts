@@ -1,6 +1,6 @@
 import type { Graph, GraphEdge, GraphNode, Project } from "./api";
 
-export type LayerKind = "endpoint" | "controller" | "service" | "repository" | "table" | "messaging";
+export type LayerKind = "endpoint" | "controller" | "service" | "repository" | "graphql" | "table" | "messaging";
 export type EdgeKind = "normal" | "reads" | "writes" | "cross" | "low";
 
 export interface DNode {
@@ -64,24 +64,25 @@ export interface DGraph {
   stageH: number;
 }
 
-const LAYER_ORDER: LayerKind[] = ["endpoint", "controller", "service", "repository", "table", "messaging"];
+const LAYER_ORDER: LayerKind[] = ["endpoint", "controller", "service", "repository", "graphql", "table", "messaging"];
 const LAYER_META: Record<LayerKind, { label: string; hue: string }> = {
   endpoint: { label: "Endpoints", hue: "--l-endpoint" },
   controller: { label: "Controllers", hue: "--l-controller" },
   service: { label: "Services", hue: "--l-service" },
   repository: { label: "Repositories", hue: "--l-repo" },
+  graphql: { label: "GraphQL types", hue: "--l-graphql" },
   table: { label: "Tables", hue: "--l-table" },
   messaging: { label: "Messaging", hue: "--l-messaging" },
 };
 const COL_SPACING = 272;
 
 export const NODE_W: Record<LayerKind, number> = {
-  endpoint: 188, controller: 188, service: 188, repository: 188, table: 168, messaging: 180,
+  endpoint: 188, controller: 188, service: 188, repository: 188, graphql: 180, table: 168, messaging: 180,
 };
 export const NODE_H = 48;
 
 const PITCH: Record<LayerKind, number> = {
-  endpoint: 80, controller: 100, service: 96, repository: 110, table: 150, messaging: 110,
+  endpoint: 80, controller: 100, service: 96, repository: 110, graphql: 96, table: 150, messaging: 110,
 };
 
 // Package grouping: a column with more than DENSE_MIN nodes spread over at least
@@ -132,6 +133,7 @@ function layerOf(n: GraphNode): LayerKind {
     case "entry_point": return "endpoint";
     case "logic": return n.metadata?.layer === "controller" ? "controller" : "service";
     case "data_access": return "repository";
+    case "graphql_entity": return "graphql";
     case "table": return "table";
     case "gateway": return "controller";
     case "infra_compute": return "service";
@@ -145,7 +147,8 @@ function layerOf(n: GraphNode): LayerKind {
 const INFRA_KINDS = new Set(["infra_compute", "queue", "topic", "datastore", "gateway"]);
 
 function mapEdgeKind(e: GraphEdge): EdgeKind {
-  if (e.kind === "MAKES_CALL" || e.kind === "CALLS_SERVICE" || e.kind === "SHARED_TABLE") return "cross";
+  if (e.kind === "MAKES_CALL" || e.kind === "CALLS_SERVICE" || e.kind === "SHARED_TABLE"
+      || e.kind === "GRAPHQL_ENTITY") return "cross";
   if (e.kind === "READS") return "reads";
   if (e.kind === "WRITES") return "writes";
   if ((e.confidence ?? 1) < 0.7) return "low";

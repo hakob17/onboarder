@@ -367,22 +367,9 @@ export function NodePanel({ wsId, g, detail, llmEnabled, onClose, onJump, onRelo
           <AICard wsId={wsId} nodeId={detail.id} card={detail.card} llmEnabled={llmEnabled} />
         )}
 
-        {code && detail.file && (
-          <>
-            <div className="sec-label">Source · {fileStem(detail.file)}</div>
-            <CodeViewer
-              title={detail.file.split("/").pop() ?? detail.file}
-              meta={`lines ${code.start}–${code.start + code.lines.length - 1}`}
-              lines={code.lines}
-              startLine={code.start}
-              hlLines={evLines}
-            />
-          </>
-        )}
-
         {detail.out_edges.length > 0 && (
-          <div className="panel-section" style={{ marginTop: 18 }}>
-            <div className="sec-label">Depends on <span className="num">(out)</span></div>
+          <div className="panel-section" style={{ marginTop: 14 }}>
+            <div className="sec-label">Calls <span className="num">({detail.out_edges.length})</span></div>
             <div className="dep-list">
               {detail.out_edges.map((e, i) => (
                 <div key={i} className="dep-item" style={{ cursor: "pointer" }} onClick={() => onJump(e.dst)}>
@@ -397,7 +384,7 @@ export function NodePanel({ wsId, g, detail, llmEnabled, onClose, onJump, onRelo
 
         {detail.in_edges.length > 0 && (
           <div className="panel-section">
-            <div className="sec-label">Called by <span className="num">(in)</span></div>
+            <div className="sec-label">Called by <span className="num">({detail.in_edges.length})</span></div>
             <div className="dep-list">
               {detail.in_edges.map((e, i) => (
                 <div key={i} className="dep-item" style={{ cursor: "pointer" }} onClick={() => onJump(e.src)}>
@@ -408,6 +395,19 @@ export function NodePanel({ wsId, g, detail, llmEnabled, onClose, onJump, onRelo
               ))}
             </div>
           </div>
+        )}
+
+        {code && detail.file && (
+          <>
+            <div className="sec-label">Source · {fileStem(detail.file)}</div>
+            <CodeViewer
+              title={detail.file.split("/").pop() ?? detail.file}
+              meta={`lines ${code.start}–${code.start + code.lines.length - 1}`}
+              lines={code.lines}
+              startLine={code.start}
+              hlLines={evLines}
+            />
+          </>
         )}
 
         <LinksSection wsId={wsId} g={g} nodeId={detail.id} onChanged={onReload} />

@@ -11,6 +11,13 @@ MAX_FILES = int(os.environ.get("ONBOARDER_MAX_FILES", "60000"))
 
 STATIC_DIR = os.environ.get("ONBOARDER_STATIC_DIR", "")
 MODEL = os.environ.get("ONBOARDER_MODEL", "claude-opus-4-8")
+
+# Build stamp — build_engine.sh writes app/_build.py so /health can report exactly
+# which engine binary is running (to confirm a plugin update actually took effect).
+try:
+    from ._build import BUILD  # type: ignore
+except Exception:
+    BUILD = "dev"
 ENRICH_MAX_SOURCE_LINES = int(os.environ.get("ONBOARDER_ENRICH_MAX_SOURCE_LINES", "400"))
 CHAT_MAX_TOKENS = int(os.environ.get("ONBOARDER_CHAT_MAX_TOKENS", "16000"))
 CHAT_MAX_TOOL_ROUNDS = int(os.environ.get("ONBOARDER_CHAT_MAX_TOOL_ROUNDS", "12"))

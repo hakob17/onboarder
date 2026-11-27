@@ -62,6 +62,10 @@
   --l-table-bg:   oklch(0.972 0.022 192);
   --l-table-line: oklch(0.88 0.035 192);
 
+  --l-graphql:      oklch(0.55 0.20 350);
+  --l-graphql-bg:   oklch(0.972 0.025 350);
+  --l-graphql-line: oklch(0.88 0.045 350);
+
   /* HTTP methods — cool family, avoids semantic red/green */
   --m-get:    oklch(0.52 0.12 250);
   --m-post:   oklch(0.50 0.15 290);
@@ -128,6 +132,10 @@
   --l-messaging:  oklch(0.74 0.12 150);
   --l-table-bg:   oklch(0.27 0.04 192);
   --l-table-line: oklch(0.40 0.055 192);
+
+  --l-graphql:      oklch(0.78 0.16 350);
+  --l-graphql-bg:   oklch(0.27 0.05 350);
+  --l-graphql-line: oklch(0.42 0.07 350);
 
   --m-get:    oklch(0.74 0.11 250);
   --m-post:   oklch(0.72 0.13 290);
@@ -346,12 +354,14 @@ body { overflow: hidden; }
 .node.service .layer-tab { background: var(--l-service); }
 .node.repository .layer-tab { background: var(--l-repo); }
 .node.table .layer-tab { background: var(--l-table); }
+.node.graphql .layer-tab { background: var(--l-graphql); }
 
 .node.endpoint   { background: var(--l-endpoint-bg);   border-color: var(--l-endpoint-line); }
 .node.controller { background: var(--l-controller-bg); border-color: var(--l-controller-line); }
 .node.service    { background: var(--l-service-bg);    border-color: var(--l-service-line); }
 .node.repository { background: var(--l-repo-bg);        border-color: var(--l-repo-line); }
 .node.table      { background: var(--l-table-bg);      border-color: var(--l-table-line); }
+.node.graphql    { background: var(--l-graphql-bg);    border-color: var(--l-graphql-line); }
 
 /* selection / dim states */
 .node.dim { opacity: 0.32; filter: saturate(0.55); }

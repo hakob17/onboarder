@@ -178,7 +178,7 @@ def workspace_overview(workspace_id: str) -> dict:
     # One wire per repo PAIR (unordered): a pair may carry calls in either direction and
     # shared-table links at once — collapse them all into a single link, but keep each
     # underlying connection's own direction so the drill-down can show real src → dst.
-    CALL_KINDS = {"CALLS_SERVICE", "CALLS_ENDPOINT", "HTTP", "HTTP_CALL", "RPC"}
+    CALL_KINDS = {"CALLS_SERVICE", "CALLS_ENDPOINT", "HTTP", "HTTP_CALL", "RPC", "GRAPHQL_ENTITY"}
     links: dict[tuple, dict] = {}
     for r in rows:
         sp, dp = r["src_proj"], r["dst_proj"]

@@ -36,7 +36,8 @@ app.include_router(trackers.router)
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "llm_enabled": llm_enabled(), "model": MODEL}
+    from .config import BUILD
+    return {"status": "ok", "llm_enabled": llm_enabled(), "model": MODEL, "build": BUILD}
 
 
 # Serve the built web UI from the same service (hosted deploy). Mounted last so

@@ -24,7 +24,8 @@ def _load(workspace_id: str):
             "SELECT * FROM projects WHERE workspace_id = ? AND status = 'ready'",
             (workspace_id,)).fetchall()]
         nodes = [row_to_dict(r, ("metadata",)) for r in conn.execute(
-            "SELECT * FROM nodes WHERE workspace_id = ? AND kind IN ('entry_point','outbound_call','table')",
+            "SELECT * FROM nodes WHERE workspace_id = ?"
+            " AND kind IN ('entry_point','outbound_call','table','graphql_entity')",
             (workspace_id,)).fetchall()]
         return projects, nodes
     finally:
@@ -182,6 +183,35 @@ def _link(workspace_id: str) -> dict:
                 ],
             })
 
+    # GraphQL federation: a subgraph that references/extends an entity is wired to the
+    # subgraph that owns it (declares its real fields). reference -> owner.
+    graph_entities = [n for n in nodes if n["kind"] == "graphql_entity"]
+    by_entity: dict[str, list[dict]] = {}
+    for e in graph_entities:
+        by_entity.setdefault(e["name"], []).append(e)
+    federated = 0
+    for name, group in by_entity.items():
+        owners = [e for e in group if (e["metadata"] or {}).get("owner")]
+        refs = [e for e in group if (e["metadata"] or {}).get("references")
+                and not (e["metadata"] or {}).get("owner")]
+        if not owners or not refs:
+            continue
+        owner = min(owners, key=lambda e: e["id"])
+        for ref in refs:
+            if ref["project_id"] == owner["project_id"]:
+                continue
+            federated += 1
+            new_links.append({
+                "src": ref["id"], "dst": owner["id"], "kind": "GRAPHQL_ENTITY",
+                "confidence": 0.85,
+                "evidence": [
+                    {"file": ref.get("file") or "", "line": ref.get("line_start") or 0,
+                     "snippet": f"references @key entity '{name}'"},
+                    {"file": owner.get("file") or "", "line": owner.get("line_start") or 0,
+                     "snippet": f"owns entity '{name}'"},
+                ],
+            })
+
     conn = get_conn()
     try:
         kept = conn.execute(
@@ -203,6 +233,6 @@ def _link(workspace_id: str) -> dict:
         conn.commit()
     finally:
         conn.close()
-    result = {"links": inserted, "shared_tables": shared, "at": now()}
+    result = {"links": inserted, "shared_tables": shared, "graphql_entities": federated, "at": now()}
     emit_event(workspace_id, None, "link_completed", result)
     return result

@@ -62,6 +62,14 @@ def build_project_graph(project: dict, src_root: Path, allow_llm: bool = True, e
     if inf_stats:
         stats["infra"] = inf_stats
 
+    from .extractors.graphql_fed import GraphQLFederationExtractor
+    gql_nodes, gql_edges, gql_stats = GraphQLFederationExtractor().extract(project["id"], src_root)
+    for n in gql_nodes:
+        nodes_by_id.setdefault(n["id"], n)
+    edges.extend(gql_edges)
+    if gql_stats:
+        stats["graphql"] = gql_stats
+
     if allow_llm and not any(n["kind"] == "entry_point" for n in nodes_by_id.values()) and llm_enabled():
         try:
             from .llm_extract import llm_extract

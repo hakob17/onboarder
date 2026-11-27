@@ -34,11 +34,15 @@ class OnboarderEngine(private val project: Project) : Disposable {
     @Volatile private var wsIdCache: String? = null
 
     private val home: Path = Paths.get(PathManager.getSystemPath(), "onboarder")
-    private val engineDir: Path = home.resolve("engine")
+    private val engineRoot: Path = home.resolve("engine")
     private val webDir: Path = home.resolve("web")
     private val dataDir: Path = home.resolve("data")
 
     private val exeName = if (isWindows()) "onboarder-engine.exe" else "onboarder-engine"
+    // Per-build engine dir: a new plugin build hashes to a new folder, so a fresh engine
+    // can never be shadowed by a stale copy whose in-place delete silently failed.
+    private val engineStamp: String by lazy { bundledEngineStamp() }
+    private val engineDir: Path get() = engineRoot.resolve(engineStamp)
     private val enginePath: Path get() = engineDir.resolve("onboarder-engine").resolve(exeName)
 
     /** Ensure the engine process is up; returns its base URL. */
@@ -113,14 +117,10 @@ class OnboarderEngine(private val project: Project) : Disposable {
     // ---- internals ----
 
     private fun extractAssets() {
-        // Stamp of the bundled engine: when the plugin ships a new engine, the stamp
-        // changes and we wipe + re-extract — so updates "just install", no cache clearing.
-        val stampFile = home.resolve("asset.stamp")
-        val want = bundledEngineStamp()
-        val have = runCatching { Files.readString(stampFile) }.getOrNull()
-        if (have != want && Files.exists(engineDir)) {
-            runCatching { engineDir.toFile().deleteRecursively() }
-        }
+        // The engine lives in a per-build dir (engine/<stamp>/). A new plugin build hashes
+        // to a new dir and extracts fresh there, so it can never be shadowed by an old copy
+        // whose in-place delete failed (a running process, a lock) — the bug that made
+        // "reinstall" keep running the stale engine.
         if (!Files.exists(enginePath)) {
             val tar = Files.createTempFile("onboarder-engine", ".tar.gz")
             copyResource("/engine/onboarder-engine.tar.gz", tar)
@@ -136,13 +136,21 @@ class OnboarderEngine(private val project: Project) : Disposable {
                 ProcessBuilder("xattr", "-dr", "com.apple.quarantine", engineDir.toString()).start().waitFor()
             }
         }
-        // The web UI is tiny — always refresh it so an updated plugin never serves a
-        // stale cached copy (the extracted dir persists across plugin updates).
+        // Prune engine dirs from older builds (best-effort; a running old engine keeps its
+        // open files, the dir entry just goes away).
+        runCatching {
+            if (Files.isDirectory(engineRoot)) {
+                Files.list(engineRoot).use { s ->
+                    s.filter { it.fileName.toString() != engineStamp }
+                        .forEach { old -> runCatching { old.toFile().deleteRecursively() } }
+                }
+            }
+        }
+        // The web UI is tiny — always refresh it so an updated plugin never serves a stale copy.
         runCatching {
             if (Files.exists(webDir)) webDir.toFile().deleteRecursively()
             unzipResource("/web/onboarder-web.zip", webDir)
         }.onFailure { log.warn("Onboarder: no bundled web UI; the engine will serve API only", it) }
-        runCatching { Files.createDirectories(home); Files.writeString(stampFile, want) }
     }
 
     /** Short hash of the bundled engine archive, so a new build forces a fresh extract. */

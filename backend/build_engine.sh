@@ -5,6 +5,11 @@ set -euo pipefail
 cd "$(dirname "$0")"
 rm -rf build dist onboarder-engine.spec
 
+# Stamp this build so /health reports exactly which engine binary is running.
+BUILD_ID="$(date +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
+printf 'BUILD = "%s"\n' "$BUILD_ID" > app/_build.py
+echo "build id: $BUILD_ID"
+
 uv run --with pyinstaller pyinstaller --noconfirm --onedir --name onboarder-engine \
   --collect-all tree_sitter_language_pack \
   --collect-all tree_sitter \

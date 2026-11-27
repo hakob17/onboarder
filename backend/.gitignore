@@ -3,3 +3,4 @@ build/
 dist/
 *.spec
 onboarder-engine-*.tar.gz
+app/_build.py

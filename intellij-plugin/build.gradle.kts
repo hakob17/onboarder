@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "com.onboarder"
-version = "0.1.1"
+version = "0.1.2"
 
 repositories {
     mavenCentral()
@@ -88,11 +88,14 @@ tasks.processResources {
     }
 }
 
-// Publish the built plugin ZIP to the repo root, where it's kept for direct download.
+// Publish the built plugin ZIP to the repo root under a STABLE name, so the direct-download
+// link never changes even as the internal plugin version bumps (which is what lets IntelliJ
+// recognise an update). The version lives inside the zip, not in its filename.
 tasks.register<Copy>("copyPluginToRoot") {
     dependsOn("buildPlugin")
     from(layout.buildDirectory.dir("distributions")) {
-        include("onboarder-intellij-*.zip")
+        include("onboarder-intellij-${project.version}.zip")
+        rename { "onboarder-intellij.zip" }
     }
     into(layout.projectDirectory.dir(".."))
 }
