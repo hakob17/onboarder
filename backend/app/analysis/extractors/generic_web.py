@@ -18,7 +18,10 @@ JS_HTTP_RECEIVERS = {"axios", "fetch", "http", "https", "got", "request", "clien
 PY_HTTP_RECEIVERS = {"requests", "httpx", "session", "client", "aiohttp"}
 GO_ROUTE_FIELDS = {"GET", "POST", "PUT", "DELETE", "PATCH"}
 RETROFIT_ANNS = {"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"}
-KT_RETROFIT_RE = re.compile(r'^\s*@(GET|POST|PUT|DELETE|PATCH)\s*\(\s*"([^"]+)"\s*\)')
+KT_RETROFIT_RE = re.compile(r'@(GET|POST|PUT|DELETE|PATCH|HTTP)\s*\(\s*(?:value\s*=\s*)?"([^"]+)"')
+# Ktor: client.get("..."), httpClient.post<T>("..."); OkHttp: Request.Builder().url("...")
+KT_KTOR_RE = re.compile(r'\b(?:client|httpClient|http)\s*\.\s*(get|post|put|delete|patch)\s*[<(]?\s*"([^"]+)"')
+KT_OKHTTP_RE = re.compile(r'\.url\s*\(\s*"([^"]+)"')
 FLASK_METHODS_RE = re.compile(r'methods\s*=\s*\[([^\]]*)\]')
 
 
@@ -220,10 +223,20 @@ def _extract_java_retrofit(pf):
 
 def _extract_kotlin(pf):
     outbound = []
-    for i, line in enumerate(pf.source.decode("utf-8", "replace").splitlines(), 1):
-        m = KT_RETROFIT_RE.match(line)
-        if m:
-            outbound.append({"method": m.group(1), "url": m.group(2), "line": i, "client": "retrofit"})
+    text = pf.source.decode("utf-8", "replace")
+    for m in KT_RETROFIT_RE.finditer(text):
+        outbound.append({"method": m.group(1).upper(), "url": m.group(2),
+                         "line": text.count("\n", 0, m.start()) + 1, "client": "retrofit"})
+    for m in KT_KTOR_RE.finditer(text):
+        url = m.group(2)
+        if url.startswith(("http", "/")):
+            outbound.append({"method": m.group(1).upper(), "url": url,
+                             "line": text.count("\n", 0, m.start()) + 1, "client": "ktor"})
+    for m in KT_OKHTTP_RE.finditer(text):
+        url = m.group(1)
+        if url.startswith(("http", "/")):
+            outbound.append({"method": "ANY", "url": url,
+                             "line": text.count("\n", 0, m.start()) + 1, "client": "okhttp"})
     return [], outbound
 
 

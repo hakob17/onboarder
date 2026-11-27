@@ -92,7 +92,19 @@ def build_project_graph(project: dict, src_root: Path, allow_llm: bool = True, e
         if gql_stats:
             stats["graphql"] = gql_stats
 
-    if allow_llm and not any(n["kind"] == "entry_point" for n in nodes_by_id.values()) and llm_enabled():
+    # Frontend pages / mobile screens + their API calls, so a client app isn't empty.
+    from .extractors.client_surfaces import ClientSurfaceExtractor
+    cs = _run("client-surface", lambda: ClientSurfaceExtractor().extract(project["id"], src_root))
+    if cs is not None:
+        cs_nodes, cs_edges, cs_stats = cs
+        for n in cs_nodes:
+            nodes_by_id.setdefault(n["id"], n)
+        edges.extend(cs_edges)
+        if cs_stats.get("pages") or cs_stats.get("screens") or cs_stats.get("client_calls"):
+            stats["client_surface"] = cs_stats
+
+    _surface_kinds = {"entry_point", "page", "screen"}
+    if allow_llm and not any(n["kind"] in _surface_kinds for n in nodes_by_id.values()) and llm_enabled():
         try:
             from .llm_extract import llm_extract
             l_nodes, l_edges, l_stats = llm_extract(project["id"], generic)

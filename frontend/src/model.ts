@@ -131,6 +131,8 @@ export const keySet = (pairs: [string, string][]) => new Set(pairs.map(([a, b]) 
 function layerOf(n: GraphNode): LayerKind {
   switch (n.kind) {
     case "entry_point": return "endpoint";
+    case "page":
+    case "screen": return "endpoint";
     case "logic": return n.metadata?.layer === "controller" ? "controller" : "service";
     case "data_access": return "repository";
     case "graphql_entity": return "graphql";

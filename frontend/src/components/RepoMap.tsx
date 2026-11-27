@@ -161,7 +161,11 @@ export function RepoMap({ overview, onOpenRepo }: {
 
           {placed.map((p) => {
             const st = stackOf(p.stack);
-            const ep = p.counts.entry_point ?? 0;
+            const endpoints = p.counts.entry_point ?? 0;
+            const nPage = p.counts.page ?? 0;
+            const nScreen = p.counts.screen ?? 0;
+            const ep = endpoints + nPage + nScreen;
+            const epLabel = endpoints ? "endpoints" : nPage ? "pages" : nScreen ? "screens" : "endpoints";
             const tbl = p.counts.table ?? 0;
             const ready = p.status === "ready";
             return (
@@ -173,7 +177,7 @@ export function RepoMap({ overview, onOpenRepo }: {
                   <div className="repo-sub">
                     {!ready
                       ? <span className="repo-analyzing"><Icon.refresh style={{ width: 11, height: 11 }} />{p.status}…</span>
-                      : <><span className="repo-stacklabel">{st.label}</span>{ep ? ` · ${ep} endpoints` : ` · ${p.total} nodes`}{tbl ? ` · ${tbl} tables` : ""}</>}
+                      : <><span className="repo-stacklabel">{st.label}</span>{ep ? ` · ${ep} ${epLabel}` : ` · ${p.total} nodes`}{tbl ? ` · ${tbl} tables` : ""}</>}
                   </div>
                 </div>
                 <Icon.arrow className="repo-open" style={{ width: 14, height: 14 }} />
