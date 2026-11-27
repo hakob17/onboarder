@@ -11,7 +11,9 @@ import json
 import re
 from pathlib import Path
 
-from ..languages import SKIP_DIRS
+from fnmatch import fnmatch
+
+from ..languages import walk_files
 
 TF_COMPUTE = {"aws_lambda_function": "lambda", "aws_ecs_service": "ecs service",
               "aws_ecs_task_definition": "ecs task"}
@@ -73,14 +75,13 @@ def _cf_loader():
 
 def _iter_files(src_root: Path, pattern: str):
     count = 0
-    for path in sorted(src_root.rglob(pattern)):
-        rel = path.relative_to(src_root)
-        if any(part in SKIP_DIRS for part in rel.parts):
+    for path in walk_files(src_root):
+        if not fnmatch(path.name, pattern):
             continue
         count += 1
         if count > MAX_FILES:
             return
-        yield path, str(rel)
+        yield path, str(path.relative_to(src_root))
 
 
 def _line_of(text: str, pattern: str) -> int:

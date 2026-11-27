@@ -6,8 +6,6 @@ from pathlib import Path
 import sqlglot
 from sqlglot import expressions as exp
 
-from .languages import SKIP_DIRS
-
 MAX_SQL_FILES = 200
 MAX_SQL_BYTES = 256 * 1024
 
@@ -17,10 +15,10 @@ def harvest_schemas(src_root: Path) -> dict[str, dict]:
     schemas: dict[str, dict] = {}
     if not src_root.exists():
         return schemas
+    from .languages import walk_files
     count = 0
-    for path in sorted(src_root.rglob("*.sql")):
-        rel = path.relative_to(src_root)
-        if any(part in SKIP_DIRS for part in rel.parts):
+    for path in walk_files(src_root):
+        if path.suffix.lower() != ".sql":
             continue
         count += 1
         if count > MAX_SQL_FILES:

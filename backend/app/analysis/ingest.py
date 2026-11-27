@@ -126,11 +126,21 @@ def _classify_root(root: Path) -> str:
     return "unknown"
 
 
-def detect_projects(extract_root: Path, max_depth: int = 4) -> list[tuple[str, str]]:
-    """Find project roots inside an extracted tree.
+# Manifests found under these subtrees of a project belong to fixtures / sample apps /
+# vendored code, not to a separate project — so they never shadow their outer root.
+_FIXTURE_DIRS = {
+    "src", "test", "tests", "testdata", "test-data", "fixtures", "fixture",
+    "examples", "example", "samples", "sample", "spec", "specs", "__tests__",
+    "e2e", "demo", "demos", "docs", "doc", "resources", "node_modules",
+}
 
-    Returns a list of (relative_root, stack). A monorepo with several build
-    manifests yields one entry per manifest root; otherwise a single entry.
+
+def detect_projects(extract_root: Path, max_depth: int = 4) -> list[tuple[str, str]]:
+    """Find project roots inside a tree.
+
+    Returns a list of (relative_root, stack). A folder of repos — even one with a
+    top-level manifest over them (a workspace/monorepo root) — yields one entry per
+    real sub-project, so each repo is analyzed with its own stack.
     """
     # Walk top-down and prune as we go: never descend into vendored/build dirs
     # (node_modules, .git, target, …) or past max_depth. rglob can't prune, so on a
@@ -147,10 +157,26 @@ def detect_projects(extract_root: Path, max_depth: int = 4) -> list[tuple[str, s
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         if manifests.intersection(filenames):
             manifest_dirs.append(cur)
-    roots: list[Path] = []
-    for d in sorted(set(manifest_dirs), key=lambda p: len(p.parts)):
-        if not any(other != d and other in d.parents for other in roots):
-            roots.append(d)
+
+    uniq = sorted(set(manifest_dirs), key=lambda p: len(p.parts))
+    # 1) drop manifests nested inside a src/test/fixtures/… subtree of an outer root —
+    #    those are fixtures or vendored sample apps, not separate projects.
+    kept: list[Path] = []
+    for d in uniq:
+        shadowed = False
+        for parent in kept:
+            if parent == d or parent not in d.parents:
+                continue
+            between = d.relative_to(parent).parts
+            if between and between[0] in _FIXTURE_DIRS:
+                shadowed = True
+                break
+        if not shadowed:
+            kept.append(d)
+    # 2) when a dir contains 2+ inner roots it's a workspace/monorepo container: keep the
+    #    inner repos and drop the container (a lone nested manifest, e.g. tooling, stays).
+    roots = [d for d in kept
+             if sum(1 for o in kept if o != d and d in o.parents) < 2]
     if not roots:
         return [(".", "unknown")]
     return [(str(r.relative_to(extract_root)) or ".", _classify_root(r)) for r in roots]

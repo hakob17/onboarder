@@ -2,7 +2,7 @@
   "name": "onboarder",
   "displayName": "Onboarder",
   "description": "Interactive architecture map of your workspace: endpoints → services → repositories → tables, cross-project links, AI summaries, chat, and Jira/ADO ticket → fix suggestions. Ships a bundled engine that analyzes the open folder in place — no upload, no Python, no server to run.",
-  "version": "0.12.1",
+  "version": "0.12.2",
   "publisher": "onboarder-dev",
   "private": true,
   "engines": {

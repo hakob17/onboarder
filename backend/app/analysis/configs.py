@@ -27,12 +27,12 @@ def harvest(src_root: Path) -> dict:
     services: set[str] = set()
     if not src_root.exists():
         return {"env": env, "services": services}
-    for path in src_root.rglob("*"):
+    from .languages import walk_files
+    for path in walk_files(src_root, max_depth=4):
         if not path.is_file():
             continue
         name = path.name.lower()
-        rel_parts = path.relative_to(src_root).parts
-        if len(rel_parts) > 4 or any(p in ("node_modules", ".git", "target", "build") for p in rel_parts):
+        if len(path.relative_to(src_root).parts) > 4:
             continue
         if name.startswith(".env") or name in CONFIG_FILES:
             for key, value in ENV_RE.findall(_read(path)):

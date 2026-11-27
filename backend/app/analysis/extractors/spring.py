@@ -338,32 +338,34 @@ def _collect_spring_props(project_id: str) -> dict[str, str]:
     patterns = ("application.yml", "application.yaml", "application.properties",
                 "application-*.yml", "application-*.yaml", "application-*.properties",
                 "bootstrap.yml", "bootstrap.properties")
+    from fnmatch import fnmatch
+
+    from ..languages import walk_files
     seen = 0
-    for pat in patterns:
-        for path in sorted(root.rglob(pat)):
-            if any(part in ("target", "build", "node_modules", ".git", ".gradle") for part in path.parts):
-                continue
-            seen += 1
-            if seen > 30:
-                break
+    for path in walk_files(root):
+        if not any(fnmatch(path.name, pat) for pat in patterns):
+            continue
+        seen += 1
+        if seen > 30:
+            break
+        try:
+            text = path.read_text("utf-8", errors="replace")
+        except OSError:
+            continue
+        if path.suffix in (".yml", ".yaml"):
+            import yaml
             try:
-                text = path.read_text("utf-8", errors="replace")
-            except OSError:
+                for doc in yaml.safe_load_all(text):
+                    if isinstance(doc, dict):
+                        _flatten_yaml(doc, "", props)
+            except yaml.YAMLError:
                 continue
-            if path.suffix in (".yml", ".yaml"):
-                import yaml
-                try:
-                    for doc in yaml.safe_load_all(text):
-                        if isinstance(doc, dict):
-                            _flatten_yaml(doc, "", props)
-                except yaml.YAMLError:
-                    continue
-            else:
-                for line in text.splitlines():
-                    line = line.strip()
-                    if line and not line.startswith(("#", "!")) and "=" in line:
-                        k, _, v = line.partition("=")
-                        props[k.strip()] = v.strip()
+        else:
+            for line in text.splitlines():
+                line = line.strip()
+                if line and not line.startswith(("#", "!")) and "=" in line:
+                    k, _, v = line.partition("=")
+                    props[k.strip()] = v.strip()
     return props
 
 

@@ -48,7 +48,7 @@ const DEFAULT_BACKEND_URL = "https://onboarder-production.up.railway.app";
 // Bundled, self-contained analysis engine: a PyInstaller binary downloaded once
 // from the GitHub release and launched locally, so analysis runs in place against
 // the open folder with no upload and no Python on the user's machine.
-const ENGINE_VERSION = "0.12.1";
+const ENGINE_VERSION = "0.12.2";
 const ENGINE_REPO = "hakob17/onboarder";
 const ENGINE_TAG = `engine-v${ENGINE_VERSION}`;
 
