@@ -175,24 +175,44 @@ def workspace_overview(workspace_id: str) -> dict:
         p["counts"] = per_counts.get(p["id"], {})
         p["total"] = totals.get(p["id"], 0)
 
+    # One wire per repo PAIR (unordered): a pair may carry calls in either direction and
+    # shared-table links at once — collapse them all into a single link, but keep each
+    # underlying connection's own direction so the drill-down can show real src → dst.
+    CALL_KINDS = {"CALLS_SERVICE", "CALLS_ENDPOINT", "HTTP", "HTTP_CALL", "RPC"}
     links: dict[tuple, dict] = {}
     for r in rows:
         sp, dp = r["src_proj"], r["dst_proj"]
         if not sp or not dp or sp == dp:
             continue
-        link = links.setdefault((sp, dp), {
-            "src_project": sp, "dst_project": dp, "count": 0,
-            "kinds": {}, "confirmed": False, "connections": [],
+        key = tuple(sorted((sp, dp)))
+        link = links.setdefault(key, {
+            "src_project": key[0], "dst_project": key[1], "count": 0,
+            "kinds": {}, "confirmed": False, "directed": False,
+            "_dir": {}, "connections": [],
         })
         link["count"] += 1
         link["kinds"][r["kind"]] = link["kinds"].get(r["kind"], 0) + 1
         if r["status"] == "confirmed":
             link["confirmed"] = True
+        if r["kind"] in CALL_KINDS:  # tally call direction to orient the wire's arrow
+            link["_dir"][(sp, dp)] = link["_dir"].get((sp, dp), 0) + 1
         if len(link["connections"]) < 300:
             link["connections"].append({
                 "src": r["src"], "src_name": r["src_name"], "src_kind": r["src_kind"],
-                "src_file": r["src_file"], "src_line": r["src_line"],
+                "src_file": r["src_file"], "src_line": r["src_line"], "src_project": sp,
                 "dst": r["dst"], "dst_name": r["dst_name"], "dst_kind": r["dst_kind"],
-                "kind": r["kind"], "confidence": r["confidence"], "status": r["status"],
+                "dst_project": dp, "kind": r["kind"], "confidence": r["confidence"],
+                "status": r["status"],
             })
-    return {"projects": projects, "links": list(links.values())}
+
+    out_links = []
+    for link in links.values():
+        dirs = link.pop("_dir")
+        if dirs:  # orient the wire toward the repo that receives the most calls
+            (sp, dp), _ = max(dirs.items(), key=lambda kv: kv[1])
+            link["src_project"], link["dst_project"] = sp, dp
+            link["directed"] = True
+        out_links.append(link)
+    # busiest wires first so they win the z-order and read as the backbone
+    out_links.sort(key=lambda l: l["count"], reverse=True)
+    return {"projects": projects, "links": out_links}

@@ -4,16 +4,18 @@ import type { Project, Workspace } from "../api";
 
 export type Persona = "dev" | "pm" | "power";
 
-export type RailKey = "map" | "trace" | "tables" | "infra" | "tickets" | "chat";
+export type RailKey = "repos" | "map" | "trace" | "tables" | "infra" | "tickets" | "chat";
 
-export function Rail({ active, onNav, onHome, onSettings, hasInfra }: {
+export function Rail({ active, onNav, onHome, onSettings, hasInfra, hasRepos }: {
   active: RailKey;
   onNav: (k: RailKey) => void;
   onHome: () => void;
   onSettings: () => void;
   hasInfra: boolean;
+  hasRepos?: boolean;
 }) {
   const items: [RailKey, string][] = [
+    ...(hasRepos ? [["repos", "Repositories"] as [RailKey, string]] : []),
     ["map", "Map"], ["trace", "Trace"], ["tables", "Tables"],
     ...(hasInfra ? [["infra", "Infrastructure"] as [RailKey, string]] : []),
     ["tickets", "Fix from ticket"],
@@ -25,7 +27,8 @@ export function Rail({ active, onNav, onHome, onSettings, hasInfra }: {
         <Logo />
       </div>
       {items.map(([k, label]) => {
-        const Ico = k === "infra" ? Icon.cloud : k === "tickets" ? Icon.ticket : Icon[k];
+        const Ico = k === "infra" ? Icon.cloud : k === "tickets" ? Icon.ticket
+          : k === "repos" ? Icon.repos : Icon[k];
         return (
           <div key={k} className={"rail-btn" + (active === k ? " active" : "")} title={label} onClick={() => onNav(k)}>
             <Ico />

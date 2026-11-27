@@ -36,6 +36,7 @@ export const Icon = {
   bolt: (p: P) => <I {...p}><polygon points="13 2 4 14 11 14 10 22 19 9 12 9 13 2"/></I>,
   ticket: (p: P) => <I {...p}><path d="M4 9V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3a2 2 0 0 0 0 6v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-6z"/><path d="M13 5v14" strokeDasharray="2 2"/></I>,
   x: (p: P) => <I {...p}><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></I>,
+  repos: (p: P) => <I {...p}><rect x="2.5" y="7" width="8" height="10" rx="1.3"/><rect x="13.5" y="7" width="8" height="10" rx="1.3"/><path d="M10.5 12h3"/></I>,
 };
 
 export function Logo() {

@@ -890,3 +890,38 @@ body { overflow: hidden; }
   padding: 10px 12px; font-family: var(--mono); font-size: 11.5px; line-height: 1.5;
   color: var(--ink-2); white-space: pre-wrap; word-break: break-word;
 }
+
+/* ---- Repo overview (folder of repos) ---- */
+.repo-node {
+  position: absolute; display: flex; align-items: center; gap: 10px; padding-right: 12px;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-card);
+  cursor: pointer; text-align: left; overflow: hidden; transition: border-color .12s, transform .12s, box-shadow .12s;
+}
+.repo-node:hover { border-color: var(--brand); transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0,0,0,.08); }
+.repo-stack { width: 6px; align-self: stretch; flex: none; }
+.repo-main { flex: 1; min-width: 0; padding: 11px 0; }
+.repo-name { font-family: var(--ui); font-weight: 600; font-size: 14px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.repo-sub { font-size: 11px; color: var(--ink-3); margin-top: 3px; font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.repo-stacklabel { color: var(--ink-2); font-weight: 600; }
+.repo-analyzing { display: inline-flex; align-items: center; gap: 5px; color: var(--l-service); }
+.repo-analyzing svg { animation: ob-spin 1s linear infinite; }
+@keyframes ob-spin { to { transform: rotate(360deg); } }
+.repo-open { color: var(--ink-4); flex: none; }
+.repo-node:hover .repo-open { color: var(--brand); }
+.wire-pill {
+  position: absolute; display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 9px;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-pill);
+  font-family: var(--mono); font-size: 11px; color: var(--ink-2); cursor: pointer; z-index: 2;
+}
+.wire-pill.on { color: var(--ink); box-shadow: 0 1px 8px var(--brand-ring); }
+.wire-conn { display: flex; align-items: center; gap: 8px; padding: 9px 2px; border-bottom: 1px solid var(--line-2); }
+.wire-side { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; background: none; border: none; cursor: pointer; padding: 0; }
+.wire-side.right { align-items: flex-end; text-align: right; }
+.wire-repo { font-family: var(--ui); font-size: 10px; font-weight: 600; letter-spacing: .02em; color: var(--ink-3); text-transform: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wire-side:hover .wire-repo { color: var(--brand-strong); }
+.wire-nodename { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; font-size: 12px; color: var(--ink); }
+.wire-side.right .wire-nodename { flex-direction: row-reverse; }
+.wire-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.wire-kindbadge { font-family: var(--mono); font-size: 8.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-4); border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px; flex: none; }
+.wire-file { font-family: var(--mono); font-size: 9.5px; color: var(--ink-4); }
+.wire-file:hover { color: var(--brand); }

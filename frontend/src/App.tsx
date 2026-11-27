@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api, eventsUrl,
   type DiffResult, type Graph, type GraphEdge, type GraphNode, type NodeDetail,
-  type Project, type SnapshotMeta, type Tour, type TrackerStatus, type Workspace,
+  type Project, type RepoOverview, type SnapshotMeta, type Tour, type TrackerStatus, type Workspace,
 } from "./api";
 import { ChatPanel } from "./components/Chat";
+import { RepoMap } from "./components/RepoMap";
 import { TicketsPanel, type TicketRequest } from "./components/Tickets";
 import { DiffPanel } from "./components/DiffPanel";
 import { InfraView } from "./components/InfraView";
@@ -20,12 +21,14 @@ import { AnalysisState, UploadChrome, UploadEmpty } from "./components/Upload";
 import { adaptGraph, neighborhood, pathsHighlight, type DNode } from "./model";
 
 type Phase = "home" | "analyzing" | "workspace";
-type View = "map" | "tables" | "infra" | "tickets" | "chat";
+type View = "repos" | "map" | "tables" | "infra" | "tickets" | "chat";
 
 export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem("ob_theme") ?? "light");
   const [llmEnabled, setLlmEnabled] = useState(false);
   const [trackerStatus, setTrackerStatus] = useState<TrackerStatus | null>(null);
+  const [overview, setOverview] = useState<RepoOverview | null>(null);
+  const [activeProject, setActiveProject] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("home");
   const [recents, setRecents] = useState<Workspace[]>([]);
   const [ws, setWs] = useState<Workspace | null>(null);
@@ -130,6 +133,16 @@ export default function App() {
     setWs(w);
     setProjects(w.projects ?? []);
     localStorage.setItem("ob_ws", id);
+    const ov = await api.getOverview(id).catch(() => null);
+    setOverview(ov);
+    const multi = (ov?.projects.length ?? (w.projects ?? []).length) > 1;
+    if (multi) {
+      // A folder of repos: land on the repo overview (renders even while analyzing).
+      setActiveProject(null);
+      setPhase("workspace");
+      setView("repos");
+      return;
+    }
     const busy = (w.projects ?? []).some((p) => p.status === "pending" || p.status === "analyzing");
     if (busy || (w.projects ?? []).length === 0) {
       setPhase("analyzing");
@@ -140,8 +153,8 @@ export default function App() {
     }
   }
 
-  async function loadGraph(wsId: string) {
-    const [graph, ps] = await Promise.all([api.getGraph(wsId), api.listProjects(wsId)]);
+  async function loadGraph(wsId: string, projectId: string | null = activeProject) {
+    const [graph, ps] = await Promise.all([api.getGraph(wsId, projectId ?? undefined), api.listProjects(wsId)]);
     setGraphRaw(graph);
     setProjects(ps);
     setSelectedId(null);
@@ -151,9 +164,17 @@ export default function App() {
 
   async function refreshGraph() {
     if (!ws) return;
-    const [graph, ps] = await Promise.all([api.getGraph(ws.id), api.listProjects(ws.id)]);
+    const [graph, ps] = await Promise.all([api.getGraph(ws.id, activeProject ?? undefined), api.listProjects(ws.id)]);
     setGraphRaw(graph);
     setProjects(ps);
+  }
+
+  async function openRepo(projectId: string, nodeId?: string) {
+    if (!ws) return;
+    setActiveProject(projectId);
+    await loadGraph(ws.id, projectId);
+    setView("map");
+    if (nodeId) void selectById(nodeId);
   }
 
   // live updates: re-analysis (save watcher, re-analyze button elsewhere) and
@@ -164,7 +185,10 @@ export default function App() {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const refresh = () => {
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => void refreshGraph(), 600);
+      timer = setTimeout(() => {
+        void api.getOverview(ws.id).then(setOverview).catch(() => undefined);
+        if (view !== "repos") void refreshGraph();
+      }, 600);
     };
     es.addEventListener("analysis_completed", refresh);
     es.addEventListener("link_completed", refresh);
@@ -173,7 +197,7 @@ export default function App() {
       es.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, ws?.id]);
+  }, [phase, ws?.id, activeProject, view]);
 
   // vscode webview bridge: extension can select a node or force a refresh
   const selectByIdRef = useRef<((id: string, opts?: { toTables?: boolean }) => Promise<void>) | null>(null);
@@ -417,7 +441,8 @@ export default function App() {
   };
 
   const onNav = (k: RailKey) => {
-    if (k === "chat") setView("chat");
+    if (k === "repos") setView("repos");
+    else if (k === "chat") setView("chat");
     else if (k === "tickets") { setView("tickets"); setDiffOpen(false); }
     else if (k === "tables") setView("tables");
     else if (k === "infra") { setView("infra"); setDiffOpen(false); }
@@ -463,9 +488,35 @@ export default function App() {
     );
   }
 
+  const multiRepo = (overview?.projects.length ?? 0) > 1;
+
+  // Repo overview: a folder of repositories shown as linked nodes. Renders without the
+  // merged graph (g may still be null while projects analyze), so it sits before the g guard.
+  if (view === "repos" && overview) {
+    return (
+      <div className="screen" data-theme={theme === "dark" ? "dark" : undefined}>
+        <Rail active="repos" onNav={onNav} onHome={goHome} onSettings={() => setSettingsOpen(true)}
+          hasInfra={false} hasRepos={multiRepo} />
+        <div className="topbar">
+          <span className="proj-name">{ws.name}</span>
+          <span className="badge"><b>{overview.projects.length} repositories</b> · {overview.links.length} connection{overview.links.length === 1 ? "" : "s"}</span>
+          <div style={{ flex: 1 }} />
+          <div className="topbar-actions">
+            <button className="tbtn" onClick={() => void reanalyze()}><Icon.refresh />Re-analyze</button>
+            <button className="tbtn icon" title="Toggle theme" onClick={toggleTheme}>
+              {theme === "dark" ? <Icon.sun /> : <Icon.moon />}
+            </button>
+          </div>
+        </div>
+        <RepoMap overview={overview} onOpenRepo={(pid, nid) => void openRepo(pid, nid)} />
+        {settingsModal}
+      </div>
+    );
+  }
+
   if (!g) return null;
 
-  const activeRail: RailKey = view === "chat" ? "chat" : view === "tickets" ? "tickets"
+  const activeRail: RailKey = view === "repos" ? "repos" : view === "chat" ? "chat" : view === "tickets" ? "tickets"
     : view === "tables" ? "tables" : view === "infra" ? "infra" : "map";
   const hasInfra = g.nodes.some((n) => ["infra_compute", "gateway", "queue", "topic", "datastore"].includes(n.raw.kind));
   const showNodePanel = detail && detail.kind !== "table" && view === "map" && !diffOpen;
@@ -473,7 +524,7 @@ export default function App() {
 
   return (
     <div className="screen" data-theme={theme === "dark" ? "dark" : undefined}>
-      <Rail active={activeRail} onNav={onNav} onHome={goHome} onSettings={() => setSettingsOpen(true)} hasInfra={hasInfra} />
+      <Rail active={activeRail} onNav={onNav} onHome={goHome} onSettings={() => setSettingsOpen(true)} hasInfra={hasInfra} hasRepos={multiRepo} />
       <TopBar
         ws={ws} projects={projects} theme={theme} onTheme={toggleTheme}
         onReanalyze={() => void reanalyze()} search={search} onSearch={setSearch}

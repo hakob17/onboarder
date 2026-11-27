@@ -95,6 +95,37 @@ export interface Settings {
   claude_cli: string | null;
 }
 
+export interface RepoNode {
+  id: string;
+  name: string;
+  stack: string;
+  status: "pending" | "analyzing" | "ready" | "failed";
+  counts: Record<string, number>;
+  total: number;
+}
+
+export interface RepoConnection {
+  src: string; src_name: string; src_kind: string; src_file?: string; src_line?: number;
+  src_project: string;
+  dst: string; dst_name: string; dst_kind: string; dst_project: string;
+  kind: string; confidence: number; status: string;
+}
+
+export interface RepoLink {
+  src_project: string;
+  dst_project: string;
+  count: number;
+  kinds: Record<string, number>;
+  confirmed: boolean;
+  directed: boolean;
+  connections: RepoConnection[];
+}
+
+export interface RepoOverview {
+  projects: RepoNode[];
+  links: RepoLink[];
+}
+
 export interface TourStep {
   title: string;
   narration: string;
@@ -162,6 +193,8 @@ export const api = {
   reanalyze: async (wsId: string, projectId: string) =>
     j<{ id: string; status: string }>(await fetch(`${BASE}/workspaces/${wsId}/projects/${projectId}/reanalyze`, { method: "POST" })),
 
+  getOverview: async (wsId: string) =>
+    j<RepoOverview>(await fetch(`${BASE}/workspaces/${wsId}/overview`)),
   getGraph: async (wsId: string, projectId?: string) => {
     const q = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
     return j<Graph>(await fetch(`${BASE}/workspaces/${wsId}/graph${q}`));
