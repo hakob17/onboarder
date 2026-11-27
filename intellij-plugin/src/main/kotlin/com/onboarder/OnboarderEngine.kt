@@ -32,17 +32,20 @@ class OnboarderEngine(private val project: Project) : Disposable {
     @Volatile private var process: Process? = null
     @Volatile private var baseUrlCache: String? = null
     @Volatile private var wsIdCache: String? = null
+    private val engineOut = java.util.concurrent.ConcurrentLinkedDeque<String>()
 
     private val home: Path = Paths.get(PathManager.getSystemPath(), "onboarder")
     private val engineRoot: Path = home.resolve("engine")
-    private val webDir: Path = home.resolve("web")
+    private val webRoot: Path = home.resolve("web")
     private val dataDir: Path = home.resolve("data")
 
     private val exeName = if (isWindows()) "onboarder-engine.exe" else "onboarder-engine"
-    // Per-build engine dir: a new plugin build hashes to a new folder, so a fresh engine
-    // can never be shadowed by a stale copy whose in-place delete silently failed.
+    // Per-build engine + web dirs: a new plugin build hashes to a new folder, so a fresh
+    // engine can never be shadowed by a stale copy, and two projects opening at once never
+    // wipe/overwrite the files another is already serving.
     private val engineStamp: String by lazy { bundledEngineStamp() }
     private val engineDir: Path get() = engineRoot.resolve(engineStamp)
+    private val webDir: Path get() = webRoot.resolve(engineStamp)
     private val enginePath: Path get() = engineDir.resolve("onboarder-engine").resolve(exeName)
 
     /** Ensure the engine process is up; returns its base URL. */
@@ -64,13 +67,31 @@ class OnboarderEngine(private val project: Project) : Disposable {
         log.info("Onboarder: starting engine $enginePath on $base")
         val proc = pb.start()
         process = proc
-        // drain output to the log so a crash is diagnosable
-        Thread({ proc.inputStream.bufferedReader().forEachLine { log.info("[engine] $it") } },
-            "onboarder-engine-log").apply { isDaemon = true; start() }
+        engineOut.clear()
+        // drain output to the log AND a ring buffer, so a crash shows its cause
+        Thread({
+            proc.inputStream.bufferedReader().forEachLine {
+                log.info("[engine] $it")
+                engineOut.addLast(it)
+                while (engineOut.size > 80) engineOut.pollFirst()
+            }
+        }, "onboarder-engine-log").apply { isDaemon = true; start() }
 
         val deadline = System.currentTimeMillis() + 90_000  // first run extracts + cold-boots
         while (System.currentTimeMillis() < deadline) {
-            if (!proc.isAlive) throw IllegalStateException("Onboarder engine exited (code ${proc.exitValue()})")
+            if (!proc.isAlive) {
+                Thread.sleep(200)  // let the drain thread catch the crash output
+                val tail = engineOut.toList().takeLast(25).joinToString("\n").ifBlank { "(engine produced no output)" }
+                val code = proc.exitValue()
+                // A crash with no output is almost always a bad/corrupt extraction — wipe this
+                // build's engine dir so the next open re-extracts a clean copy (self-heal).
+                if (code != 0 && engineOut.isEmpty()) {
+                    log.warn("Onboarder: engine exited $code with no output — wiping $engineDir to re-extract")
+                    runCatching { engineDir.toFile().deleteRecursively() }
+                }
+                throw IllegalStateException(
+                    "Onboarder engine exited (code $code) at $enginePath\n--- engine output ---\n$tail")
+            }
             if (health(base)) { baseUrlCache = base; return base }
             Thread.sleep(400)
         }
@@ -116,41 +137,66 @@ class OnboarderEngine(private val project: Project) : Disposable {
 
     // ---- internals ----
 
+    /** Move src into dst atomically; if dst already exists (another project won the race)
+     *  that's fine, drop src. Falls back to a plain move if ATOMIC_MOVE is unsupported. */
+    private fun publishDir(src: Path, dst: Path, exists: () -> Boolean) {
+        try {
+            Files.move(src, dst, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+        } catch (e: Exception) {
+            if (!exists()) runCatching { Files.move(src, dst) }
+            if (!exists()) throw IllegalStateException("could not place $dst", e)
+        } finally {
+            runCatching { if (Files.exists(src)) src.toFile().deleteRecursively() }
+        }
+    }
+
     private fun extractAssets() {
-        // The engine lives in a per-build dir (engine/<stamp>/). A new plugin build hashes
-        // to a new dir and extracts fresh there, so it can never be shadowed by an old copy
-        // whose in-place delete failed (a running process, a lock) — the bug that made
-        // "reinstall" keep running the stale engine.
+        // Engine: per-build dir, extracted ATOMICALLY — unpack into a temp dir, then rename
+        // it into place. Two projects opening at once can't see a half-written binary (which
+        // is what made the engine exit 255), and a new build can't be shadowed by a stale one.
         if (!Files.exists(enginePath)) {
-            val tar = Files.createTempFile("onboarder-engine", ".tar.gz")
-            copyResource("/engine/onboarder-engine.tar.gz", tar)
-            Files.createDirectories(engineDir)
-            val r = ProcessBuilder("tar", "-xzf", tar.toString(), "-C", engineDir.toString())
-                .redirectErrorStream(true).start()
-            if (!r.waitFor(120, java.util.concurrent.TimeUnit.SECONDS) || r.exitValue() != 0) {
-                throw IllegalStateException("Failed to extract bundled engine")
-            }
-            Files.deleteIfExists(tar)
-            if (!isWindows()) enginePath.toFile().setExecutable(true)
-            if (isMac()) runCatching {
-                ProcessBuilder("xattr", "-dr", "com.apple.quarantine", engineDir.toString()).start().waitFor()
-            }
-        }
-        // Prune engine dirs from older builds (best-effort; a running old engine keeps its
-        // open files, the dir entry just goes away).
-        runCatching {
-            if (Files.isDirectory(engineRoot)) {
-                Files.list(engineRoot).use { s ->
-                    s.filter { it.fileName.toString() != engineStamp }
-                        .forEach { old -> runCatching { old.toFile().deleteRecursively() } }
+            Files.createDirectories(engineRoot)
+            val tmp = Files.createTempDirectory(engineRoot, ".extract-")
+            try {
+                val tar = Files.createTempFile("onboarder-engine", ".tar.gz")
+                copyResource("/engine/onboarder-engine.tar.gz", tar)
+                val r = ProcessBuilder("tar", "-xzf", tar.toString(), "-C", tmp.toString())
+                    .redirectErrorStream(true).start()
+                if (!r.waitFor(180, java.util.concurrent.TimeUnit.SECONDS) || r.exitValue() != 0) {
+                    throw IllegalStateException("Failed to extract bundled engine")
                 }
+                Files.deleteIfExists(tar)
+                val tmpExe = tmp.resolve("onboarder-engine").resolve(exeName)
+                if (!isWindows()) tmpExe.toFile().setExecutable(true)
+                if (isMac()) runCatching {
+                    ProcessBuilder("xattr", "-dr", "com.apple.quarantine", tmp.toString()).start().waitFor()
+                }
+                publishDir(tmp, engineDir) { Files.exists(enginePath) }
+            } finally {
+                runCatching { if (Files.exists(tmp)) tmp.toFile().deleteRecursively() }
             }
         }
-        // The web UI is tiny — always refresh it so an updated plugin never serves a stale copy.
-        runCatching {
-            if (Files.exists(webDir)) webDir.toFile().deleteRecursively()
-            unzipResource("/web/onboarder-web.zip", webDir)
-        }.onFailure { log.warn("Onboarder: no bundled web UI; the engine will serve API only", it) }
+        // Web UI: per-build dir, also published atomically (so a concurrent project never
+        // wipes the copy another is serving).
+        if (!Files.exists(webDir.resolve("index.html"))) {
+            Files.createDirectories(webRoot)
+            val tmp = Files.createTempDirectory(webRoot, ".web-")
+            try {
+                unzipResource("/web/onboarder-web.zip", tmp)
+                publishDir(tmp, webDir) { Files.exists(webDir.resolve("index.html")) }
+            } catch (e: Exception) {
+                log.warn("Onboarder: no bundled web UI; the engine will serve API only", e)
+            } finally {
+                runCatching { if (Files.exists(tmp)) tmp.toFile().deleteRecursively() }
+            }
+        }
+        // Prune dirs from older builds (best-effort).
+        for (rootDir in listOf(engineRoot, webRoot)) runCatching {
+            if (Files.isDirectory(rootDir)) Files.list(rootDir).use { s ->
+                s.filter { it.fileName.toString() != engineStamp && !it.fileName.toString().startsWith(".") }
+                    .forEach { old -> runCatching { old.toFile().deleteRecursively() } }
+            }
+        }
     }
 
     /** Short hash of the bundled engine archive, so a new build forces a fresh extract. */
