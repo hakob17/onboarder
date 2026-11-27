@@ -442,6 +442,18 @@ export default function App() {
     }
   }
 
+  async function openFlowReportNodes(nodeIds: string[], title: string) {
+    if (!ws || nodeIds.length === 0) return;
+    setFlowBusy(true);
+    try {
+      setFlowReport(await api.getFlowReportFromNodes(ws.id, nodeIds, title || undefined));
+    } catch (e) {
+      setTourError(`Flow report failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setFlowBusy(false);
+    }
+  }
+
   // keep the comparison current as re-analysis refreshes the graph underneath
   useEffect(() => {
     if (diffOpen && ws) void loadDiff(diffBase);
@@ -558,6 +570,7 @@ export default function App() {
             onClose={() => setView("map")}
             ask={chatAsk}
             onAskConsumed={() => setChatAsk(null)}
+            onExportFlow={(ids, title) => void openFlowReportNodes(ids, title)}
           />
         </MapGraph>
       ) : view === "tickets" ? (

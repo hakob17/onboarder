@@ -662,6 +662,20 @@ body { overflow: hidden; }
   font-family: var(--mono); margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line-strong);
 }
 .activity-line svg { width: 12px; height: 12px; color: var(--reads); }
+.flow-export-btn {
+  display: inline-flex; align-items: center; gap: 7px; margin-top: 10px;
+  font-size: 12px; font-weight: 600; color: var(--brand-strong);
+  background: var(--brand-soft); border: 1px solid var(--brand-soft);
+  border-radius: var(--r-pill); padding: 6px 12px; cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.flow-export-btn:hover { border-color: var(--brand); background: var(--brand-soft); }
+.flow-export-btn svg { color: var(--brand-strong); }
+.flow-export-count {
+  font-family: var(--mono); font-size: 10.5px; font-weight: 500;
+  color: var(--ink-3); padding-left: 7px; margin-left: 1px;
+  border-left: 1px solid var(--line-strong);
+}
 .chat-foot { padding: 12px 14px; border-top: 1px solid var(--line); }
 .suggest-row { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 10px; }
 .suggest {

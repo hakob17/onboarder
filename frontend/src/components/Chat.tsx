@@ -9,9 +9,20 @@ interface ChatMsg {
   text: string;
   activities: string[];
   streaming?: boolean;
+  flowIds?: string[];
 }
 
 const CHIP_RE = /\[node:([^\]]+)\]/g;
+
+// Turn the user's question into a report heading: the first sentence if it's a
+// reasonable length, otherwise a trimmed slice.
+function flowTitle(userMsg: { role: string; text: string } | undefined): string {
+  const q = (userMsg?.role === "user" ? userMsg.text : "").trim();
+  if (!q) return "";
+  const firstSentence = q.match(/^.*?[?.!](\s|$)/)?.[0]?.trim();
+  if (firstSentence && firstSentence.length <= 100) return firstSentence;
+  return q.length <= 100 ? q : q.slice(0, 97).trimEnd() + "…";
+}
 
 function prettyActivity(name: string, input: Record<string, any>): string {
   switch (name) {
@@ -45,7 +56,7 @@ function renderWithChips(text: string, g: DGraph, onChip: (id: string) => void):
   return out;
 }
 
-export function ChatPanel({ wsId, g, llmEnabled, onDirective, onChip, onClose, ask, onAskConsumed }: {
+export function ChatPanel({ wsId, g, llmEnabled, onDirective, onChip, onClose, ask, onAskConsumed, onExportFlow }: {
   wsId: string;
   g: DGraph;
   llmEnabled: boolean;
@@ -54,6 +65,7 @@ export function ChatPanel({ wsId, g, llmEnabled, onDirective, onChip, onClose, a
   onClose: () => void;
   ask?: string | null;
   onAskConsumed?: () => void;
+  onExportFlow?: (nodeIds: string[], title: string) => void;
 }) {
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
@@ -107,6 +119,14 @@ export function ChatPanel({ wsId, g, llmEnabled, onDirective, onChip, onClose, a
           }));
         } else if (ev.event === "ui_directive") {
           onDirective(ev.data);
+          const ids: string[] = ev.data?.node_ids ?? [];
+          if (ids.length) {
+            patchLast((m) => {
+              const merged = [...(m.flowIds ?? [])];
+              for (const id of ids) if (!merged.includes(id)) merged.push(id);
+              return { ...m, flowIds: merged };
+            });
+          }
         } else if (ev.event === "error") {
           patchLast((m) => ({ ...m, text: m.text || `⚠ ${ev.data.message}`, streaming: false }));
         } else if (ev.event === "done") {
@@ -159,6 +179,16 @@ export function ChatPanel({ wsId, g, llmEnabled, onDirective, onChip, onClose, a
                 <div className="activity-line">
                   <Icon.check />{m.activities.join(" · ")}
                 </div>
+              )}
+              {m.role === "bot" && !m.streaming && onExportFlow && (m.flowIds?.length ?? 0) >= 2 && (
+                <button
+                  className="flow-export-btn"
+                  onClick={() => onExportFlow(m.flowIds!, flowTitle(msgs[i - 1]))}
+                  title="Turn the nodes I found into a shareable flow report (AI summary + diagram, Markdown / PDF)"
+                >
+                  <Icon.file style={{ width: 13, height: 13 }} />
+                  Export this flow <span className="flow-export-count">{m.flowIds!.length} nodes</span>
+                </button>
               )}
             </div>
           </div>

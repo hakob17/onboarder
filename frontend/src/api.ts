@@ -205,6 +205,11 @@ export const api = {
     j<RepoOverview>(await fetch(`${BASE}/workspaces/${wsId}/overview`)),
   getFlowReport: async (wsId: string, fromId: string) =>
     j<FlowReport>(await fetch(`${BASE}/workspaces/${wsId}/flow-report?from_id=${encodeURIComponent(fromId)}`)),
+  getFlowReportFromNodes: async (wsId: string, nodeIds: string[], title?: string) =>
+    j<FlowReport>(await fetch(`${BASE}/workspaces/${wsId}/flow-report`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ node_ids: nodeIds, title }),
+    })),
   getGraph: async (wsId: string, projectId?: string) => {
     const q = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
     return j<Graph>(await fetch(`${BASE}/workspaces/${wsId}/graph${q}`));

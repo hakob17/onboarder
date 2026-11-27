@@ -40,7 +40,24 @@ def flow_report(ws_id: str, from_id: str) -> dict:
     key / local CLI is configured, otherwise the grounded step list)."""
     from ..llm.flow_report import generate_flow_report
     try:
-        return generate_flow_report(ws_id, from_id)
+        return generate_flow_report(ws_id, from_id=from_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from e
+
+
+class FlowReportReq(BaseModel):
+    from_id: str | None = None
+    node_ids: list[str] | None = None
+    title: str | None = None
+
+
+@router.post("/workspaces/{ws_id}/flow-report")
+def flow_report_post(ws_id: str, body: FlowReportReq) -> dict:
+    """Flow report for an explicit set of nodes — e.g. the nodes the chat found for
+    'how does the OTP flow work?' — or from an endpoint."""
+    from ..llm.flow_report import generate_flow_report
+    try:
+        return generate_flow_report(ws_id, from_id=body.from_id, node_ids=body.node_ids, title=body.title)
     except ValueError as e:
         raise HTTPException(404, str(e)) from e
 
