@@ -25,7 +25,7 @@ def _load(workspace_id: str):
             (workspace_id,)).fetchall()]
         nodes = [row_to_dict(r, ("metadata",)) for r in conn.execute(
             "SELECT * FROM nodes WHERE workspace_id = ?"
-            " AND kind IN ('entry_point','outbound_call','table','graphql_entity')",
+            " AND kind IN ('entry_point','outbound_call','table','graphql_entity','model')",
             (workspace_id,)).fetchall()]
         return projects, nodes
     finally:
@@ -218,6 +218,31 @@ def _link(workspace_id: str) -> dict:
                 ],
             })
 
+    # Shared data contracts: a model/DTO declared in 2+ projects is a contract they exchange.
+    models = [n for n in nodes if n["kind"] == "model"]
+    by_model: dict[str, list[dict]] = {}
+    for m in models:
+        by_model.setdefault(m["name"].lower(), []).append(m)
+    shared_models = 0
+    for name, group in by_model.items():
+        if len({m["project_id"] for m in group}) < 2:
+            continue
+        group.sort(key=lambda m: m["id"])
+        anchor = group[0]
+        for other in group[1:]:
+            if other["project_id"] == anchor["project_id"]:
+                continue
+            shared_models += 1
+            new_links.append({
+                "src": anchor["id"], "dst": other["id"], "kind": "SHARED_MODEL", "confidence": 0.65,
+                "evidence": [
+                    {"file": anchor.get("file") or "", "line": anchor.get("line_start") or 0,
+                     "snippet": f"model '{anchor['name']}' in {anchor['project_id']}"},
+                    {"file": other.get("file") or "", "line": other.get("line_start") or 0,
+                     "snippet": f"model '{other['name']}' in {other['project_id']}"},
+                ],
+            })
+
     conn = get_conn()
     try:
         kept = conn.execute(
@@ -239,6 +264,7 @@ def _link(workspace_id: str) -> dict:
         conn.commit()
     finally:
         conn.close()
-    result = {"links": inserted, "shared_tables": shared, "graphql_entities": federated, "at": now()}
+    result = {"links": inserted, "shared_tables": shared, "graphql_entities": federated,
+              "shared_models": shared_models, "at": now()}
     emit_event(workspace_id, None, "link_completed", result)
     return result

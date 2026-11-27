@@ -66,6 +66,10 @@
   --l-graphql-bg:   oklch(0.972 0.025 350);
   --l-graphql-line: oklch(0.88 0.045 350);
 
+  --l-model:      oklch(0.52 0.10 30);
+  --l-model-bg:   oklch(0.972 0.02 40);
+  --l-model-line: oklch(0.89 0.035 40);
+
   /* HTTP methods — cool family, avoids semantic red/green */
   --m-get:    oklch(0.52 0.12 250);
   --m-post:   oklch(0.50 0.15 290);
@@ -136,6 +140,10 @@
   --l-graphql:      oklch(0.78 0.16 350);
   --l-graphql-bg:   oklch(0.27 0.05 350);
   --l-graphql-line: oklch(0.42 0.07 350);
+
+  --l-model:      oklch(0.76 0.10 40);
+  --l-model-bg:   oklch(0.27 0.04 40);
+  --l-model-line: oklch(0.42 0.055 40);
 
   --m-get:    oklch(0.74 0.11 250);
   --m-post:   oklch(0.72 0.13 290);
@@ -355,6 +363,7 @@ body { overflow: hidden; }
 .node.repository .layer-tab { background: var(--l-repo); }
 .node.table .layer-tab { background: var(--l-table); }
 .node.graphql .layer-tab { background: var(--l-graphql); }
+.node.model .layer-tab { background: var(--l-model); }
 
 .node.endpoint   { background: var(--l-endpoint-bg);   border-color: var(--l-endpoint-line); }
 .node.controller { background: var(--l-controller-bg); border-color: var(--l-controller-line); }
@@ -362,6 +371,7 @@ body { overflow: hidden; }
 .node.repository { background: var(--l-repo-bg);        border-color: var(--l-repo-line); }
 .node.table      { background: var(--l-table-bg);      border-color: var(--l-table-line); }
 .node.graphql    { background: var(--l-graphql-bg);    border-color: var(--l-graphql-line); }
+.node.model      { background: var(--l-model-bg);      border-color: var(--l-model-line); }
 
 /* selection / dim states */
 .node.dim { opacity: 0.32; filter: saturate(0.55); }
@@ -1017,3 +1027,21 @@ body { overflow: hidden; }
   #flow-report-print { position: absolute; left: 0; top: 0; width: 100%; padding: 0; overflow: visible; }
   .flow-step { break-inside: avoid; }
 }
+
+/* ---- Layer toggle bar ---- */
+.layer-toolbar {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 8;
+  display: flex; align-items: center; gap: 5px; flex-wrap: wrap; justify-content: center; max-width: 72%;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-pill);
+  padding: 5px 8px; box-shadow: 0 2px 10px rgba(0,0,0,.07);
+}
+.layer-toolbar-label { font-size: 11px; color: var(--ink-3); font-family: var(--ui); margin: 0 3px 0 2px; }
+.layer-chip {
+  display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px;
+  background: var(--surface-2, var(--surface)); border: 1px solid var(--line); border-radius: var(--r-pill);
+  font-family: var(--ui); font-size: 11.5px; color: var(--ink-2); cursor: pointer; transition: opacity .12s, background .12s;
+}
+.layer-chip:hover { border-color: var(--line-strong); }
+.layer-chip .layer-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.layer-chip.off { opacity: .45; text-decoration: line-through; background: transparent; }
+.layer-chip.off .layer-dot { background: var(--line-strong) !important; }

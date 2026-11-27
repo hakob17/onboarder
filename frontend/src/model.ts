@@ -1,6 +1,6 @@
 import type { Graph, GraphEdge, GraphNode, Project } from "./api";
 
-export type LayerKind = "endpoint" | "controller" | "service" | "repository" | "graphql" | "table" | "messaging";
+export type LayerKind = "endpoint" | "controller" | "service" | "repository" | "graphql" | "model" | "table" | "messaging";
 export type EdgeKind = "normal" | "reads" | "writes" | "cross" | "low";
 
 export interface DNode {
@@ -64,25 +64,26 @@ export interface DGraph {
   stageH: number;
 }
 
-const LAYER_ORDER: LayerKind[] = ["endpoint", "controller", "service", "repository", "graphql", "table", "messaging"];
+const LAYER_ORDER: LayerKind[] = ["endpoint", "controller", "service", "repository", "graphql", "model", "table", "messaging"];
 const LAYER_META: Record<LayerKind, { label: string; hue: string }> = {
   endpoint: { label: "Endpoints", hue: "--l-endpoint" },
   controller: { label: "Controllers", hue: "--l-controller" },
   service: { label: "Services", hue: "--l-service" },
   repository: { label: "Repositories", hue: "--l-repo" },
   graphql: { label: "GraphQL types", hue: "--l-graphql" },
+  model: { label: "Models / DTOs", hue: "--l-model" },
   table: { label: "Tables", hue: "--l-table" },
   messaging: { label: "Messaging", hue: "--l-messaging" },
 };
 const COL_SPACING = 272;
 
 export const NODE_W: Record<LayerKind, number> = {
-  endpoint: 188, controller: 188, service: 188, repository: 188, graphql: 180, table: 168, messaging: 180,
+  endpoint: 188, controller: 188, service: 188, repository: 188, graphql: 180, model: 176, table: 168, messaging: 180,
 };
 export const NODE_H = 48;
 
 const PITCH: Record<LayerKind, number> = {
-  endpoint: 80, controller: 100, service: 96, repository: 110, graphql: 96, table: 150, messaging: 110,
+  endpoint: 80, controller: 100, service: 96, repository: 110, graphql: 96, model: 84, table: 150, messaging: 110,
 };
 
 // Package grouping: a column with more than DENSE_MIN nodes spread over at least
@@ -146,6 +147,7 @@ function layerOf(n: GraphNode): LayerKind {
     case "logic": return n.metadata?.layer === "controller" ? "controller" : "service";
     case "data_access": return "repository";
     case "graphql_entity": return "graphql";
+    case "model": return "model";
     case "table": return "table";
     case "gateway": return "controller";
     case "infra_compute": return "service";
@@ -160,7 +162,7 @@ const INFRA_KINDS = new Set(["infra_compute", "queue", "topic", "datastore", "ga
 
 function mapEdgeKind(e: GraphEdge): EdgeKind {
   if (e.kind === "MAKES_CALL" || e.kind === "CALLS_SERVICE" || e.kind === "SHARED_TABLE"
-      || e.kind === "GRAPHQL_ENTITY") return "cross";
+      || e.kind === "GRAPHQL_ENTITY" || e.kind === "SHARED_MODEL") return "cross";
   if (e.kind === "READS") return "reads";
   if (e.kind === "WRITES") return "writes";
   if ((e.confidence ?? 1) < 0.7) return "low";
@@ -305,20 +307,24 @@ export function adaptGraph(graph: Graph, projects: Project[]): DGraph {
 export interface LayoutResult {
   pos: Map<string, { x: number; y: number }>;
   groups: DGroup[];           // placed (collapsed ones carry boxes; all carry x/y/h/collapsed)
+  cols: DCol[];               // visible columns, re-packed (x reflects hidden-layer removal)
   stageW: number;
   stageH: number;
 }
 
 /** Position a column either as individual node cards (sparse columns, or expanded
  *  packages) or as collapsed package cards, given which group ids are collapsed. */
-export function relayout(g: DGraph, collapsed: Set<string>): LayoutResult {
+export function relayout(g: DGraph, collapsed: Set<string>, hidden?: Set<LayerKind>): LayoutResult {
   const pos = new Map<string, { x: number; y: number }>();
   const placed: DGroup[] = [];
   const nodeById = g.byId;
   let maxBottom = 0;
   let lastX = 28;
-  for (const col of g.cols) {
-    const x = col.x;
+  // re-pack visible columns so a hidden layer leaves no gap
+  const visibleCols = hidden && hidden.size ? g.cols.filter((c) => !hidden.has(c.id)) : g.cols;
+  const colX = new Map(visibleCols.map((c, i) => [c.id, 28 + i * COL_SPACING]));
+  for (const col of visibleCols) {
+    const x = colX.get(col.id)!;
     lastX = x;
     const colGroups = g.groups.filter((gr) => gr.col === col.id)
       .sort((a, b) => (nodeById.get(a.memberIds[0])?.order ?? 0) - (nodeById.get(b.memberIds[0])?.order ?? 0));
@@ -355,6 +361,7 @@ export function relayout(g: DGraph, collapsed: Set<string>): LayoutResult {
   return {
     pos,
     groups: placed,
+    cols: visibleCols.map((c) => ({ ...c, x: colX.get(c.id)! })),
     stageW: Math.max(1000, lastX + GROUP_W + 40),
     stageH: Math.max(680, maxBottom + 80),
   };

@@ -22,7 +22,7 @@ function Minimap({ g, groups, pos, highlight }: {
 }) {
   const layerColor: Record<string, string> = {
     endpoint: "--l-endpoint", controller: "--l-controller", service: "--l-service",
-    repository: "--l-repo", graphql: "--l-graphql", table: "--l-table", messaging: "--l-messaging",
+    repository: "--l-repo", graphql: "--l-graphql", model: "--l-model", table: "--l-table", messaging: "--l-messaging",
   };
   const stageW = Math.max(1000, ...groups.map((gr) => gr.x + gr.w), ...[...pos.values()].map((p) => p.x + 188));
   const stageH = Math.max(680, ...groups.map((gr) => gr.y + gr.h), ...[...pos.values()].map((p) => p.y + NODE_H));
@@ -99,6 +99,11 @@ export function MapGraph({ g, highlight, selectedId, onSelect, showMinimap = tru
   const dim = !!highlight;
   const hueOf = useMemo(() => new Map(g.cols.map((c) => [c.id as LayerKind, c.hue])), [g]);
   const collapsibleCount = useMemo(() => g.groups.filter((gr) => gr.collapsible).length, [g]);
+  const [hidden, setHidden] = useState<Set<LayerKind>>(new Set());
+  useEffect(() => { setHidden(new Set()); }, [g]);
+  const toggleLayer = (k: LayerKind) => setHidden((prev) => {
+    const s = new Set(prev); if (s.has(k)) s.delete(k); else s.add(k); return s;
+  });
 
   // a selected/searched node forces its package open so the match is actually visible
   const forceOpen = useMemo(() => {
@@ -115,7 +120,7 @@ export function MapGraph({ g, highlight, selectedId, onSelect, showMinimap = tru
     return s;
   }, [collapsed, forceOpen]);
 
-  const L = useMemo(() => relayout(g, effCollapsed), [g, effCollapsed]);
+  const L = useMemo(() => relayout(g, effCollapsed, hidden), [g, effCollapsed, hidden]);
   const stageW = L.stageW, stageH = L.stageH;
 
   const toggle = (gid: string) => setCollapsed((prev) => {
@@ -221,6 +226,19 @@ export function MapGraph({ g, highlight, selectedId, onSelect, showMinimap = tru
   return (
     <div className="body" onClick={() => onSelect?.(null)}>
       <div className="canvas-grid" />
+      {g.cols.length > 1 && (
+        <div className="layer-toolbar" onClick={(e) => e.stopPropagation()}>
+          <span className="layer-toolbar-label">Layers</span>
+          {g.cols.map((c) => (
+            <button key={c.id} className={"layer-chip" + (hidden.has(c.id) ? " off" : "")}
+              title={hidden.has(c.id) ? `Show ${c.label}` : `Hide ${c.label}`}
+              onClick={() => toggleLayer(c.id)}>
+              <span className="layer-dot" style={{ background: `var(${c.hue})` }} />
+              {c.label}
+            </button>
+          ))}
+        </div>
+      )}
       {collapsibleCount > 0 && (
         <div className="grp-toolbar" onClick={(e) => e.stopPropagation()}>
           <Icon.repos style={{ width: 13, height: 13, color: "var(--ink-3)" }} />
@@ -240,7 +258,7 @@ export function MapGraph({ g, highlight, selectedId, onSelect, showMinimap = tru
               <span key={w.id} className={"grp-wire-pill" + (w.hot ? " hot" : "") + (dim && !w.hot ? " dim" : "")}
                 style={{ left: w.mid.x - 11, top: w.mid.y - 9 }}>{w.count}</span>
             ))}
-            {g.cols.map((c) => {
+            {L.cols.map((c) => {
               const cnt = g.nodes.filter((n) => n.type === c.id).length;
               return (
                 <div key={c.id} className="col-head" style={{ position: "absolute", left: c.x + 2, top: 14 }}>

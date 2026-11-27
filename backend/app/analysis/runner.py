@@ -103,6 +103,16 @@ def build_project_graph(project: dict, src_root: Path, allow_llm: bool = True, e
         if cs_stats.get("pages") or cs_stats.get("screens") or cs_stats.get("client_calls"):
             stats["client_surface"] = cs_stats
 
+    # Data contracts (DTOs / models / entities) — the models apps exchange.
+    from .extractors.models import ModelExtractor
+    mdl = _run("models", lambda: ModelExtractor().extract(project["id"], src_root))
+    if mdl is not None:
+        mdl_nodes, _mdl_edges, mdl_stats = mdl
+        for n in mdl_nodes:
+            nodes_by_id.setdefault(n["id"], n)
+        if mdl_stats.get("models"):
+            stats["models"] = mdl_stats["models"]
+
     _surface_kinds = {"entry_point", "page", "screen"}
     if allow_llm and not any(n["kind"] in _surface_kinds for n in nodes_by_id.values()) and llm_enabled():
         try:

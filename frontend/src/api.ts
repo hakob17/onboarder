@@ -38,7 +38,7 @@ export interface GraphNode {
   project_id: string;
   kind: "entry_point" | "logic" | "data_access" | "table" | "outbound_call" | "queue"
     | "external_api" | "infra_compute" | "topic" | "datastore" | "gateway" | "graphql_entity"
-    | "page" | "screen";
+    | "page" | "screen" | "model";
   name: string;
   qualified_name?: string;
   file?: string;
