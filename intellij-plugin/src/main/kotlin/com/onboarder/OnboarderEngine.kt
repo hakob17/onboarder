@@ -44,8 +44,9 @@ class OnboarderEngine(private val project: Project) : Disposable {
     // engine can never be shadowed by a stale copy, and two projects opening at once never
     // wipe/overwrite the files another is already serving.
     private val engineStamp: String by lazy { bundledEngineStamp() }
+    private val webStamp: String by lazy { bundledStamp("/web/onboarder-web.zip") }
     private val engineDir: Path get() = engineRoot.resolve(engineStamp)
-    private val webDir: Path get() = webRoot.resolve(engineStamp)
+    private val webDir: Path get() = webRoot.resolve(webStamp)
     private val enginePath: Path get() = engineDir.resolve("onboarder-engine").resolve(exeName)
 
     /** Ensure the engine process is up; returns its base URL. */
@@ -190,19 +191,21 @@ class OnboarderEngine(private val project: Project) : Disposable {
                 runCatching { if (Files.exists(tmp)) tmp.toFile().deleteRecursively() }
             }
         }
-        // Prune dirs from older builds (best-effort).
-        for (rootDir in listOf(engineRoot, webRoot)) runCatching {
+        // Prune dirs from older builds (best-effort), each root by its own current stamp.
+        for ((rootDir, keep) in listOf(engineRoot to engineStamp, webRoot to webStamp)) runCatching {
             if (Files.isDirectory(rootDir)) Files.list(rootDir).use { s ->
-                s.filter { it.fileName.toString() != engineStamp && !it.fileName.toString().startsWith(".") }
+                s.filter { it.fileName.toString() != keep && !it.fileName.toString().startsWith(".") }
                     .forEach { old -> runCatching { old.toFile().deleteRecursively() } }
             }
         }
     }
 
-    /** Short hash of the bundled engine archive, so a new build forces a fresh extract. */
-    private fun bundledEngineStamp(): String {
+    private fun bundledEngineStamp(): String = bundledStamp("/engine/onboarder-engine.tar.gz")
+
+    /** Short hash of a bundled archive, so a new build forces a fresh extract of just that part. */
+    private fun bundledStamp(resource: String): String {
         val md = java.security.MessageDigest.getInstance("SHA-256")
-        javaClass.getResourceAsStream("/engine/onboarder-engine.tar.gz")?.use { s ->
+        javaClass.getResourceAsStream(resource)?.use { s ->
             val buf = ByteArray(1 shl 16)
             while (true) { val n = s.read(buf); if (n < 0) break; md.update(buf, 0, n) }
         } ?: return "none"

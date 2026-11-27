@@ -11,7 +11,7 @@ import threading
 
 from ..config import llm_enabled, resolve_root
 from ..db import emit_event, get_conn, now, row_to_dict
-from .configs import harvest, norm_path, norm_token, resolve_template, split_url
+from .configs import harvest, norm_path, norm_token, resolve_template, resource_key, split_url
 
 _LOCK = threading.Lock()
 MIN_SCORE = 0.55
@@ -51,7 +51,13 @@ def _score(outbound, endpoint, host: str | None, target_proj_tokens: set[str],
     elif o_path.endswith(e_path) or e_path.endswith(o_path):
         score += 0.3
     else:
-        return 0.0
+        # gateway-tolerant: the call may be routed through a gateway so the paths aren't
+        # 1-1 — fall back to matching the resource (drop api/version/gateway/action words).
+        o_res, e_res = resource_key(o_path), resource_key(e_path)
+        if o_res and e_res and (o_res == e_res or o_res.endswith(e_res) or e_res.endswith(o_res)):
+            score += 0.22
+        else:
+            return 0.0
 
     if host:
         htok = norm_token(host)

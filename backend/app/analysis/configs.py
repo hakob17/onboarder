@@ -93,3 +93,28 @@ def norm_path(path: str) -> str:
         else:
             out.append(p.lower())
     return "/" + "/".join(out)
+
+
+# Segments a gateway / API convention adds that aren't the resource itself, so a mobile call
+# routed through a gateway can still be matched to the backend endpoint it ultimately hits.
+_GATEWAY_SEGS = {"api", "rest", "gateway", "gw", "public", "internal", "external", "app",
+                 "backend", "bff", "services", "service", "web", "mobile", "v"}
+_ACTION_SEGS = {"list", "all", "get", "fetch", "create", "add", "new", "update", "edit",
+                "delete", "remove", "search", "query", "find", "detail", "details", "info"}
+_VER_RE = re.compile(r"^v\d+$")
+
+
+def resource_key(norm_path_value: str) -> str:
+    """Reduce a normalized path to its resource tokens — drop api/version/gateway and
+    action words, singularise plurals — so '/gw/order-service/v2/orders' and '/api/orders'
+    both key to 'order'. Used as a looser, lower-confidence fallback match."""
+    segs = []
+    for s in norm_path_value.split("/"):
+        if not s or s == "{}" or s in _GATEWAY_SEGS or s in _ACTION_SEGS or _VER_RE.match(s):
+            continue
+        if s.endswith("-service") or s.endswith("-svc"):
+            s = s.rsplit("-", 1)[0]
+        if len(s) > 3 and s.endswith("s"):
+            s = s[:-1]  # orders -> order
+        segs.append(s)
+    return "/".join(segs)

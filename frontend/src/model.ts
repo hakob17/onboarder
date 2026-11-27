@@ -98,19 +98,29 @@ const NODE_GAP = 8;
 const COL_TOP = 70;
 
 const SRC_ROOT = /^(?:app\/)?src\/(?:main\/)?(?:java|kotlin|scala|groovy|resources)\/|^(?:app\/)?src\/|^app\//;
+// Java/Kotlin package org prefix (com/acme/…) and purely organisational folders — these
+// aren't the feature, so we skip past them to find the meaningful module name.
+const PKG_TLD = new Set(["com", "org", "io", "net", "co", "dev", "me", "gg", "app"]);
+const PKG_CONTAINERS = new Set([
+  "views", "view", "pages", "page", "features", "feature", "modules", "module",
+  "packages", "package", "screens", "lib", "libs", "source", "sources", "main", "ui",
+  "src", "internal", "domain",
+]);
 
-/** Package / folder of a source file, used to cluster a column's nodes. */
+/** Group a file by its FEATURE/module directory, not its innermost folder — so a
+ *  frontend's many `components`/`dialogs` folders and a Java app's repeated `controller`
+ *  folders collapse into meaningful, distinct groups (ads, billing, …) instead of a wall
+ *  of identically-named "components" / "controller" boxes. */
 export function packageKey(file?: string): { id: string; label: string; title: string } {
-  if (!file) return { id: "~root", label: "root", title: "(top level)" };
+  if (!file) return { id: "~shared", label: "shared", title: "(top level)" };
   const parts = file.split("/");
   parts.pop(); // drop filename
-  let dir = parts.join("/").replace(SRC_ROOT, "");
-  if (!dir) return { id: "~root", label: "root", title: "top level" };
-  const segs = dir.split("/").filter(Boolean);
-  const label = segs[segs.length - 1] || "root";
-  // dotted for java-ish deep packages, slashes for shallow web folders
-  const title = segs.length > 2 ? segs.join(".") : segs.join("/");
-  return { id: dir, label, title };
+  const dir = parts.join("/").replace(SRC_ROOT, "");
+  let segs = dir.split("/").filter(Boolean);
+  if (segs.length >= 2 && PKG_TLD.has(segs[0].toLowerCase())) segs = segs.slice(2); // com/acme/…
+  while (segs.length > 1 && PKG_CONTAINERS.has(segs[0].toLowerCase())) segs = segs.slice(1);
+  const feature = segs[0] || "shared";
+  return { id: feature.toLowerCase(), label: feature, title: dir || feature };
 }
 
 // ---- edge path builders (from the design prototype) ----
