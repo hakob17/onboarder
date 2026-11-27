@@ -140,3 +140,59 @@ def trace(workspace_id: str, from_id: str, to_id: str | None = None, max_depth: 
         return (full or paths)[:50]
     finally:
         conn.close()
+
+
+def workspace_overview(workspace_id: str) -> dict:
+    """Repo-level view: each project with its node counts, plus cross-project links
+    aggregated by (source repo → target repo) with the underlying connections."""
+    conn = get_conn()
+    try:
+        projects = [dict(r) for r in conn.execute(
+            "SELECT id, name, stack, status FROM projects WHERE workspace_id = ? ORDER BY created_at",
+            (workspace_id,)).fetchall()]
+        counts = conn.execute(
+            "SELECT project_id, kind, COUNT(*) AS n FROM nodes WHERE workspace_id = ?"
+            " GROUP BY project_id, kind", (workspace_id,)).fetchall()
+        rows = conn.execute(
+            "SELECT ns.project_id AS src_proj, nd.project_id AS dst_proj, ce.kind AS kind,"
+            "       ce.status AS status, ce.confidence AS confidence, ce.src AS src, ce.dst AS dst,"
+            "       ns.name AS src_name, nd.name AS dst_name, ns.kind AS src_kind, nd.kind AS dst_kind,"
+            "       ns.file AS src_file, ns.line_start AS src_line"
+            " FROM cross_edges ce"
+            " JOIN nodes ns ON ns.id = ce.src AND ns.workspace_id = ce.workspace_id"
+            " JOIN nodes nd ON nd.id = ce.dst AND nd.workspace_id = ce.workspace_id"
+            " WHERE ce.workspace_id = ? AND ce.status != 'rejected'", (workspace_id,)).fetchall()
+    finally:
+        conn.close()
+
+    per_counts: dict[str, dict] = {}
+    totals: dict[str, int] = {}
+    for c in counts:
+        per_counts.setdefault(c["project_id"], {})[c["kind"]] = c["n"]
+        totals[c["project_id"]] = totals.get(c["project_id"], 0) + c["n"]
+    for p in projects:
+        p["name"] = p["name"].split("/")[-1] or p["name"]
+        p["counts"] = per_counts.get(p["id"], {})
+        p["total"] = totals.get(p["id"], 0)
+
+    links: dict[tuple, dict] = {}
+    for r in rows:
+        sp, dp = r["src_proj"], r["dst_proj"]
+        if not sp or not dp or sp == dp:
+            continue
+        link = links.setdefault((sp, dp), {
+            "src_project": sp, "dst_project": dp, "count": 0,
+            "kinds": {}, "confirmed": False, "connections": [],
+        })
+        link["count"] += 1
+        link["kinds"][r["kind"]] = link["kinds"].get(r["kind"], 0) + 1
+        if r["status"] == "confirmed":
+            link["confirmed"] = True
+        if len(link["connections"]) < 300:
+            link["connections"].append({
+                "src": r["src"], "src_name": r["src_name"], "src_kind": r["src_kind"],
+                "src_file": r["src_file"], "src_line": r["src_line"],
+                "dst": r["dst"], "dst_name": r["dst_name"], "dst_kind": r["dst_kind"],
+                "kind": r["kind"], "confidence": r["confidence"], "status": r["status"],
+            })
+    return {"projects": projects, "links": list(links.values())}

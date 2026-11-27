@@ -18,6 +18,11 @@ def get_graph(ws_id: str, project_id: str | None = None) -> dict:
     return graph.fetch_graph(ws_id, project_id)
 
 
+@router.get("/workspaces/{ws_id}/overview")
+def get_overview(ws_id: str) -> dict:
+    return graph.workspace_overview(ws_id)
+
+
 @router.post("/workspaces/{ws_id}/link")
 def run_linker(ws_id: str) -> dict:
     from ..analysis.linker import link_workspace
