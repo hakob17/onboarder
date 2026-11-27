@@ -1,9 +1,15 @@
 import hashlib
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .languages import iter_source_files, node_text, parse_source
+
+# Cap parsed files per project: a 200k-file monorepo would otherwise hold that many
+# tree-sitter trees in memory at once and kill the engine. Beyond this we stop and
+# flag the result as truncated (the map is partial but the engine survives).
+MAX_PARSE_FILES = int(os.environ.get("ONBOARDER_MAX_PARSE_FILES", "20000"))
 
 CLASS_NODE_TYPES = {
     "class_declaration", "class_definition", "interface_declaration",
@@ -38,6 +44,7 @@ class GenericResult:
     files: list[ParsedFile] = field(default_factory=list)
     symbols: list[dict] = field(default_factory=list)
     candidates: list[dict] = field(default_factory=list)
+    truncated: bool = False
 
 
 def _symbol_name(node, source: bytes) -> str | None:
@@ -114,6 +121,11 @@ def run_generic_pass(src_root: Path, on_progress=None) -> GenericResult:
     result = GenericResult()
     scanned = 0
     for abs_path, rel_path, lang in iter_source_files(src_root):
+        if scanned >= MAX_PARSE_FILES:
+            result.truncated = True
+            print(f"[onboarder] generic pass: hit {MAX_PARSE_FILES}-file cap under {src_root}, "
+                  "analysis is partial", flush=True)
+            break
         try:
             source = abs_path.read_bytes()
         except OSError:

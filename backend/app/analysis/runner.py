@@ -117,6 +117,7 @@ def build_project_graph(project: dict, src_root: Path, allow_llm: bool = True, e
         "files": len(generic.files),
         "symbols": len(generic.symbols),
         "candidates": len(generic.candidates),
+        "truncated": generic.truncated,
     })
     return generic, nodes, edges, stats
 
@@ -151,6 +152,18 @@ def analyze_project(workspace_id: str, project_id: str) -> None:
                    {"error": str(e), "trace": traceback.format_exc()[-2000:]})
 
 
+import os as _os
+
+# Analyze at most a few projects at once: a folder of large repos otherwise parses all of
+# them in parallel and exhausts the engine's memory. Each finished project frees its trees.
+_ANALYSIS_SEM = threading.Semaphore(int(_os.environ.get("ONBOARDER_ANALYSIS_CONCURRENCY", "2")))
+
+
+def _analyze_guarded(workspace_id: str, project_id: str) -> None:
+    with _ANALYSIS_SEM:
+        analyze_project(workspace_id, project_id)
+
+
 def analyze_in_background(workspace_id: str, project_id: str) -> None:
     try:
         from .snapshots import maybe_auto_snapshot
@@ -158,5 +171,5 @@ def analyze_in_background(workspace_id: str, project_id: str) -> None:
     except Exception:
         pass
     threading.Thread(
-        target=analyze_project, args=(workspace_id, project_id), daemon=True
+        target=_analyze_guarded, args=(workspace_id, project_id), daemon=True
     ).start()
