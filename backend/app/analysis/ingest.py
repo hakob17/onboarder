@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -131,17 +132,21 @@ def detect_projects(extract_root: Path, max_depth: int = 4) -> list[tuple[str, s
     Returns a list of (relative_root, stack). A monorepo with several build
     manifests yields one entry per manifest root; otherwise a single entry.
     """
+    # Walk top-down and prune as we go: never descend into vendored/build dirs
+    # (node_modules, .git, target, …) or past max_depth. rglob can't prune, so on a
+    # big multi-repo folder it would enumerate the whole tree and stall the request.
     manifest_dirs: list[Path] = []
-    for path in sorted(extract_root.rglob("*")):
-        if not path.is_file():
-            continue
-        rel = path.relative_to(extract_root)
-        if len(rel.parts) > max_depth + 1:
-            continue
-        if any(part in SKIP_DIRS for part in rel.parts):
-            continue
-        if path.name in MANIFESTS:
-            manifest_dirs.append(path.parent)
+    root_depth = len(extract_root.parts)
+    manifests = set(MANIFESTS)
+    for dirpath, dirnames, filenames in os.walk(extract_root):
+        cur = Path(dirpath)
+        depth = len(cur.parts) - root_depth  # 0 at the root folder
+        if depth >= max_depth:
+            dirnames[:] = []  # don't descend any deeper
+        else:
+            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        if manifests.intersection(filenames):
+            manifest_dirs.append(cur)
     roots: list[Path] = []
     for d in sorted(set(manifest_dirs), key=lambda p: len(p.parts)):
         if not any(other != d and other in d.parents for other in roots):

@@ -84,8 +84,9 @@ class OnboarderEngine(private val project: Project) : Disposable {
         val name = project.name.ifBlank { Path.of(root).fileName.toString() }
         val created = postJson("$base/workspaces", """{"name":${quote(name)}}""")
         val wsId = JsonParser.parseString(created).asJsonObject["id"].asString
-        // in-place: send the path, not a zip
-        postJson("$base/workspaces/$wsId/projects/local", """{"path":${quote(root)}}""")
+        // in-place: send the path, not a zip. Scanning a big folder for project roots
+        // can take a little while, so give this call plenty of headroom.
+        postJson("$base/workspaces/$wsId/projects/local", """{"path":${quote(root)}}""", timeoutSec = 120)
         waitForProjects(base, wsId)
         wsIdCache = wsId
         return wsId
@@ -206,9 +207,9 @@ class OnboarderEngine(private val project: Project) : Disposable {
         if (res.statusCode() in 200..299) res.body() else null
     }.getOrNull()
 
-    private fun postJson(url: String, json: String): String {
+    private fun postJson(url: String, json: String, timeoutSec: Long = 30): String {
         val req = HttpRequest.newBuilder(URI.create(url))
-            .timeout(Duration.ofSeconds(30))
+            .timeout(Duration.ofSeconds(timeoutSec))
             .header("content-type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(json)).build()
         val res = http.send(req, HttpResponse.BodyHandlers.ofString())
