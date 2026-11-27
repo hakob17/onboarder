@@ -87,3 +87,12 @@ tasks.processResources {
         }
     }
 }
+
+// Publish the built plugin ZIP to the repo root, where it's kept for direct download.
+tasks.register<Copy>("copyPluginToRoot") {
+    dependsOn("buildPlugin")
+    from(layout.buildDirectory.dir("distributions")) {
+        include("onboarder-intellij-*.zip")
+    }
+    into(layout.projectDirectory.dir(".."))
+}
