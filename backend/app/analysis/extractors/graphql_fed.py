@@ -98,9 +98,22 @@ class GraphQLFederationExtractor:
             for optype, field, ret in ops:
                 operations[(optype, field)] = {"ret": ret, "file": rel}
 
+        # Only scan JS/TS for inline `gql` schemas when the project actually uses GraphQL —
+        # otherwise reading every source file of a large JS repo is pure waste (and risk).
+        scan_js = False
+        pkg = src_root / "package.json"
+        if pkg.exists():
+            try:
+                t = pkg.read_text("utf-8", errors="replace")[:100_000]
+                scan_js = "graphql" in t or "apollo" in t
+            except OSError:
+                pass
+
         count = 0
         for path in walk_files(src_root):
             ext = path.suffix.lower()
+            if ext not in SDL_EXTS and not (scan_js and ext in (".ts", ".tsx", ".js", ".jsx", ".mjs")):
+                continue
             rel = str(path.relative_to(src_root))
             try:
                 if ext in SDL_EXTS:
@@ -110,7 +123,7 @@ class GraphQLFederationExtractor:
                     record(text, rel)
                     stats["sdl_files"] += 1
                     count += 1
-                elif ext in (".ts", ".tsx", ".js", ".jsx", ".mjs"):
+                else:
                     text = path.read_text("utf-8", errors="replace")
                     if "gql`" not in text and "graphql`" not in text:
                         continue

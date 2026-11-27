@@ -36,39 +36,61 @@ def build_project_graph(project: dict, src_root: Path, allow_llm: bool = True, e
     edges: list = []
     stats: dict = {}
     covered_langs: set = set()
+
+    def _run(label: str, fn):
+        """Run one extractor defensively: a failure logs + is skipped, so one bad file
+        can't fail the whole project (it just produces fewer nodes)."""
+        try:
+            return fn()
+        except Exception as e:
+            import traceback
+            print(f"[onboarder] extractor '{label}' failed on {project.get('id')}: {e}", flush=True)
+            traceback.print_exc()
+            if emit:
+                emit("extractor_failed", {"extractor": label, "error": str(e)})
+            return None
+
     extractor = find_extractor(project["stack"])
     if extractor is not None:
         lang_files = [(f.path, f.tree, f.source) for f in generic.files if f.language == "java"]
         if lang_files:
-            t_nodes, t_edges, stats = extractor.extract(project["id"], lang_files)
-            nodes_by_id = {n["id"]: n for n in t_nodes}
-            edges = list(t_edges)
-            stats["extractor"] = extractor.name
-            covered_langs = {"java"}
+            res = _run(extractor.name, lambda: extractor.extract(project["id"], lang_files))
+            if res is not None:
+                t_nodes, t_edges, stats = res
+                nodes_by_id = {n["id"]: n for n in t_nodes}
+                edges = list(t_edges)
+                stats["extractor"] = extractor.name
+                covered_langs = {"java"}
 
-    gw_nodes, gw_edges, gw_stats = GenericWebExtractor().extract(
-        project["id"], generic, exclude_langs=covered_langs)
-    for n in gw_nodes:
-        nodes_by_id.setdefault(n["id"], n)
-    edges.extend(gw_edges)
-    if gw_stats.get("endpoints") or gw_stats.get("outbound") or gw_stats.get("sql_tables"):
-        stats["generic_web"] = gw_stats
+    gw = _run("generic-web", lambda: GenericWebExtractor().extract(
+        project["id"], generic, exclude_langs=covered_langs))
+    if gw is not None:
+        gw_nodes, gw_edges, gw_stats = gw
+        for n in gw_nodes:
+            nodes_by_id.setdefault(n["id"], n)
+        edges.extend(gw_edges)
+        if gw_stats.get("endpoints") or gw_stats.get("outbound") or gw_stats.get("sql_tables"):
+            stats["generic_web"] = gw_stats
 
     from .extractors.infra import InfraExtractor
-    inf_nodes, inf_edges, inf_stats = InfraExtractor().extract(project["id"], src_root)
-    for n in inf_nodes:
-        nodes_by_id.setdefault(n["id"], n)
-    edges.extend(inf_edges)
-    if inf_stats:
-        stats["infra"] = inf_stats
+    inf = _run("infra", lambda: InfraExtractor().extract(project["id"], src_root))
+    if inf is not None:
+        inf_nodes, inf_edges, inf_stats = inf
+        for n in inf_nodes:
+            nodes_by_id.setdefault(n["id"], n)
+        edges.extend(inf_edges)
+        if inf_stats:
+            stats["infra"] = inf_stats
 
     from .extractors.graphql_fed import GraphQLFederationExtractor
-    gql_nodes, gql_edges, gql_stats = GraphQLFederationExtractor().extract(project["id"], src_root)
-    for n in gql_nodes:
-        nodes_by_id.setdefault(n["id"], n)
-    edges.extend(gql_edges)
-    if gql_stats:
-        stats["graphql"] = gql_stats
+    gql = _run("graphql", lambda: GraphQLFederationExtractor().extract(project["id"], src_root))
+    if gql is not None:
+        gql_nodes, gql_edges, gql_stats = gql
+        for n in gql_nodes:
+            nodes_by_id.setdefault(n["id"], n)
+        edges.extend(gql_edges)
+        if gql_stats:
+            stats["graphql"] = gql_stats
 
     if allow_llm and not any(n["kind"] == "entry_point" for n in nodes_by_id.values()) and llm_enabled():
         try:
@@ -84,9 +106,10 @@ def build_project_graph(project: dict, src_root: Path, allow_llm: bool = True, e
 
     nodes = list(nodes_by_id.values())
 
-    from .migrations import apply_schemas, harvest_schemas
-    schemas = harvest_schemas(src_root)
-    applied = apply_schemas(project["id"], nodes, schemas)
+    def _migrations():
+        from .migrations import apply_schemas, harvest_schemas
+        return apply_schemas(project["id"], nodes, harvest_schemas(src_root))
+    applied = _run("migrations", _migrations)
     if applied:
         stats["migration_tables"] = applied
 

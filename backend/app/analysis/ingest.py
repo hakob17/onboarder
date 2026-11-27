@@ -150,12 +150,29 @@ _FIXTURE_DIRS = {
 }
 
 
+def _is_aggregator(d: Path) -> bool:
+    """A Maven/Gradle parent that bundles sub-modules into ONE build — kept as a single
+    multi-module project (with inter-module wires) rather than split into its modules."""
+    pom = d / "pom.xml"
+    if pom.exists():
+        t = _read(pom)
+        if "<modules>" in t or "<packaging>pom</packaging>" in t:
+            return True
+    for name in ("settings.gradle", "settings.gradle.kts"):
+        f = d / name
+        if f.exists() and re.search(r"\binclude\b", _read(f)):
+            return True
+    return False
+
+
 def detect_projects(extract_root: Path, max_depth: int = 4) -> list[tuple[str, str]]:
     """Find project roots inside a tree.
 
-    Returns a list of (relative_root, stack). A folder of repos — even one with a
-    top-level manifest over them (a workspace/monorepo root) — yields one entry per
-    real sub-project, so each repo is analyzed with its own stack.
+    Returns a list of (relative_root, stack). The shallowest manifest in each subtree
+    wins, so a multi-module build stays ONE project (its modules are not separate
+    projects). A folder of repos yields one entry per repo; a workspace/monorepo with a
+    top-level manifest expands to its sub-projects — but only one level, so you get the
+    real projects, not every module.
     """
     # Walk top-down and prune as we go: never descend into vendored/build dirs
     # (node_modules, .git, target, …) or past max_depth. rglob can't prune, so on a
@@ -188,10 +205,21 @@ def detect_projects(extract_root: Path, max_depth: int = 4) -> list[tuple[str, s
                 break
         if not shadowed:
             kept.append(d)
-    # 2) when a dir contains 2+ inner roots it's a workspace/monorepo container: keep the
-    #    inner repos and drop the container (a lone nested manifest, e.g. tooling, stays).
-    roots = [d for d in kept
-             if sum(1 for o in kept if o != d and d in o.parents) < 2]
+    def _shallowest(dirs: list[Path]) -> list[Path]:
+        s = set(dirs)
+        return [d for d in dirs if not any(o != d and o in d.parents for o in s)]
+
+    # 2) project roots = the shallowest manifest in each subtree, so a multi-module build's
+    #    sub-modules stay PART of their project rather than becoming separate projects.
+    roots = _shallowest(kept)
+    # 3) a single top root with nested manifests is either ONE multi-module build (keep it)
+    #    or a workspace/monorepo container (expand ONE level to its sub-projects — not every
+    #    leaf, so a 12-project folder reads as 12 projects, not hundreds of modules).
+    if len(roots) == 1 and any(roots[0] in d.parents for d in kept) and not _is_aggregator(roots[0]):
+        inner = _shallowest([d for d in kept if d != roots[0]])
+        if len(inner) >= 2:
+            roots = inner
     if not roots:
         return [(".", "unknown")]
+    roots.sort(key=lambda p: (len(p.parts), str(p)))
     return [(str(r.relative_to(extract_root)) or ".", _classify_root(r)) for r in roots]
