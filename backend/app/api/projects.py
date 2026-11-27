@@ -94,10 +94,51 @@ class LocalProject(BaseModel):
     path: str
 
 
+def _detect_and_analyze(ws_id: str, root: Path) -> None:
+    """Scan the folder for project roots, register them, kick off analysis. Runs in a
+    background thread so the POST returns instantly and can never time out, however big
+    or slow the folder is. Timing goes to stdout → the engine log for diagnosis."""
+    import time
+    from ..db import emit_event
+    t0 = time.monotonic()
+    try:
+        roots = detect_projects(root)
+        print(f"[onboarder] detect_projects: {len(roots)} roots in "
+              f"{(time.monotonic() - t0) * 1000:.0f}ms under {root}", flush=True)
+        created = []
+        conn = get_conn()
+        try:
+            existing = {r["root_path"] for r in conn.execute(
+                "SELECT root_path FROM projects WHERE workspace_id = ?", (ws_id,)).fetchall()}
+            for rel_root, stack in roots:
+                project_root = root if rel_root == "." else root / rel_root
+                if str(project_root) in existing:
+                    continue
+                project_id = new_id("p")
+                name = project_root.name
+                conn.execute(
+                    "INSERT INTO projects(id, workspace_id, name, root_path, stack, status, created_at)"
+                    " VALUES(?,?,?,?,?,?,?)",
+                    (project_id, ws_id, name, str(project_root), stack, "pending", now()),
+                )
+                created.append({"id": project_id, "name": name, "stack": stack})
+            conn.commit()
+        finally:
+            conn.close()
+        emit_event(ws_id, None, "projects_detected", {"count": len(created)})
+        for p in created:
+            analyze_in_background(ws_id, p["id"])
+    except Exception as e:
+        print(f"[onboarder] detect_and_analyze failed: {e}", flush=True)
+        emit_event(ws_id, None, "detect_failed", {"error": str(e)})
+
+
 @router.post("/workspaces/{ws_id}/projects/local")
 def add_local_project(ws_id: str, body: LocalProject) -> dict:
     """Analyze a folder in place — no upload, nothing copied. Used by the
-    VS Code extension and local CLI flows."""
+    VS Code extension and local CLI flows. Detection + analysis run in the
+    background; this returns immediately so the client never blocks on the scan."""
+    import threading
     _workspace_or_404(ws_id)
     root = Path(body.path).expanduser()
     if not root.is_absolute():
@@ -105,31 +146,8 @@ def add_local_project(ws_id: str, body: LocalProject) -> dict:
     root = root.resolve()
     if not root.is_dir():
         raise HTTPException(400, f"not a directory: {root}")
-
-    created = []
-    conn = get_conn()
-    try:
-        existing = {r["root_path"] for r in conn.execute(
-            "SELECT root_path FROM projects WHERE workspace_id = ?", (ws_id,)).fetchall()}
-        for rel_root, stack in detect_projects(root):
-            project_root = root if rel_root == "." else root / rel_root
-            if str(project_root) in existing:
-                continue
-            project_id = new_id("p")
-            name = project_root.name
-            conn.execute(
-                "INSERT INTO projects(id, workspace_id, name, root_path, stack, status, created_at)"
-                " VALUES(?,?,?,?,?,?,?)",
-                (project_id, ws_id, name, str(project_root), stack, "pending", now()),
-            )
-            created.append({"id": project_id, "name": name, "stack": stack,
-                            "status": "pending", "root_path": str(project_root)})
-        conn.commit()
-    finally:
-        conn.close()
-    for p in created:
-        analyze_in_background(ws_id, p["id"])
-    return {"projects": created}
+    threading.Thread(target=_detect_and_analyze, args=(ws_id, root), daemon=True).start()
+    return {"detecting": True}
 
 
 @router.delete("/workspaces/{ws_id}/projects/{project_id}")

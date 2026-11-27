@@ -65,7 +65,7 @@ class OnboarderEngine(private val project: Project) : Disposable {
         val proc = pb.start()
         process = proc
         // drain output to the log so a crash is diagnosable
-        Thread({ proc.inputStream.bufferedReader().forEachLine { log.debug("[engine] $it") } },
+        Thread({ proc.inputStream.bufferedReader().forEachLine { log.info("[engine] $it") } },
             "onboarder-engine-log").apply { isDaemon = true; start() }
 
         val deadline = System.currentTimeMillis() + 90_000  // first run extracts + cold-boots
@@ -194,7 +194,7 @@ class OnboarderEngine(private val project: Project) : Disposable {
      * folder of large repos no longer sits on a blank tool window up to the old 180s limit.
      */
     private fun waitForProjects(base: String, wsId: String) {
-        val deadline = System.currentTimeMillis() + 20_000
+        val deadline = System.currentTimeMillis() + 60_000
         while (System.currentTimeMillis() < deadline) {
             val body = getBody("$base/workspaces/$wsId/projects") ?: return
             val arr = JsonParser.parseString(body).asJsonArray

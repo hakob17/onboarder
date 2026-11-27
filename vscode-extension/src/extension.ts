@@ -48,7 +48,7 @@ const DEFAULT_BACKEND_URL = "https://onboarder-production.up.railway.app";
 // Bundled, self-contained analysis engine: a PyInstaller binary downloaded once
 // from the GitHub release and launched locally, so analysis runs in place against
 // the open folder with no upload and no Python on the user's machine.
-const ENGINE_VERSION = "0.12.4";
+const ENGINE_VERSION = "0.12.5";
 const ENGINE_REPO = "hakob17/onboarder";
 const ENGINE_TAG = `engine-v${ENGINE_VERSION}`;
 
@@ -369,7 +369,7 @@ async function waitForAnalysis(base: string, wsId: string, report?: (msg: string
 // and streams each one's analysis progress live (SSE), so a folder of large repos no
 // longer blocks on the full-analysis wait before anything appears.
 async function waitForProjectsRegistered(base: string, wsId: string): Promise<void> {
-  const deadline = Date.now() + 20000;
+  const deadline = Date.now() + 60000;
   while (Date.now() < deadline) {
     const projects = await refreshProjects(base, wsId);
     if (projects.length > 0) {
