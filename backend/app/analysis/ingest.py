@@ -82,10 +82,25 @@ def _read(path: Path, limit: int = 512 * 1024) -> str:
         return ""
 
 
+def _find_shallow(root: Path, filename: str, max_depth: int = 6) -> bool:
+    """True if `filename` exists under `root`, pruning SKIP_DIRS and stopping at the first
+    hit. Replaces root.glob('**/'+filename), which walks node_modules/target/build in full."""
+    root_depth = len(root.parts)
+    for dirpath, dirnames, filenames in os.walk(root):
+        depth = len(Path(dirpath).parts) - root_depth
+        if depth >= max_depth:
+            dirnames[:] = []
+        else:
+            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        if filename in filenames:
+            return True
+    return False
+
+
 def _classify_root(root: Path) -> str:
     if (root / "pom.xml").exists() or (root / "build.gradle").exists() or (root / "build.gradle.kts").exists():
         text = _read(root / "pom.xml") + _read(root / "build.gradle") + _read(root / "build.gradle.kts")
-        if "com.android" in text or list(root.glob("**/AndroidManifest.xml"))[:1]:
+        if "com.android" in text or _find_shallow(root, "AndroidManifest.xml"):
             return "android"
         if "springframework" in text or "spring-boot" in text:
             return "spring"
